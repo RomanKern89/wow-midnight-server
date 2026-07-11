@@ -1,0 +1,8 @@
+# Never commit local env or the Blizzard-derived inputs you mount here.
+.env
+data/*
+!data/README.md
+import/*
+!import/README.md
+etc/*.conf
+etc/*.pem

@@ -1,0 +1,99 @@
+name: wow-midnight-server
+
+# Deploy the server in containers. You still supply two things yourself
+# (Blizzard's property — see ../DISCLAIMER.md):
+#   1. Client-extracted data  -> mount into ./data   (dbc/maps/vmaps/mmaps)
+#   2. A world DB dump @68275  -> drop into ./import  (imported on first run)
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: tc-mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password --max_allowed_packet=256M
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_USER: ${DB_USER:-trinity}
+      MYSQL_PASSWORD: ${DB_PASS:-trinity}
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: create DBs, import base SQL + your world dump, apply community fixes.
+  db-init:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    image: wow-midnight-server:latest
+    container_name: tc-db-init
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_USER: ${DB_USER:-trinity}
+      DB_PASS: ${DB_PASS:-trinity}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+    volumes:
+      - ./import:/import:ro
+      - ../sql:/fixes:ro
+    entrypoint: ["/usr/bin/tini", "--", "/scripts/db-init.sh"]
+    restart: "no"
+
+  worldserver:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    image: wow-midnight-server:latest
+    container_name: tc-worldserver
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: mysql
+      DB_USER: ${DB_USER:-trinity}
+      DB_PASS: ${DB_PASS:-trinity}
+      REALM_ADDRESS: ${REALM_ADDRESS:-127.0.0.1}
+    volumes:
+      - ./data:/opt/tc/data:ro          # <-- your client-extracted data
+      - ./etc:/opt/tc/etc-templates:ro
+    entrypoint: ["/usr/bin/tini", "--", "/scripts/entrypoint-world.sh"]
+    ports:
+      - "8085:8085"
+    stdin_open: true
+    tty: true
+
+  bnetserver:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    image: wow-midnight-server:latest
+    container_name: tc-bnetserver
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: mysql
+      DB_USER: ${DB_USER:-trinity}
+      DB_PASS: ${DB_PASS:-trinity}
+      LOGIN_REST_EXTERNAL_ADDRESS: ${LOGIN_REST_EXTERNAL_ADDRESS:-127.0.0.1}
+    volumes:
+      - ./etc:/opt/tc/etc-templates:ro
+    entrypoint: ["/usr/bin/tini", "--", "/scripts/entrypoint-bnet.sh"]
+    ports:
+      - "1119:1119"
+      - "8081:8081"
+
+volumes:
+  db_data:
