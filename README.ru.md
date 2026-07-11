@@ -1,5 +1,7 @@
 <!-- Язык: [English](README.md) · **Русский** -->
 
+![WoW Midnight Server](assets/banner.png)
+
 # WoW Midnight сервер — TrinityCore 12.0.7 (билд 68275)
 
 > Документированный приватный сервер **World of Warcraft: Midnight** на базе
@@ -58,6 +60,28 @@
 | Ретейл-билд | **12.0.7.68275** |
 
 ---
+
+![Статистика контента](assets/stats.png)
+
+## Галерея
+
+### Архитектура
+
+![Архитектура](assets/architecture.png)
+
+### Игровые скриншоты
+
+> Это заглушки — положи свои реальные игровые скриншоты в
+> `assets/screenshots/`, и они появятся здесь. (Мы **не** включаем игровые
+> изображения Blizzard; см. [DISCLAIMER](DISCLAIMER.md).)
+
+<!--
+![Создание персонажа](assets/screenshots/01-character.png)
+![Isle of Dorn](assets/screenshots/02-isle-of-dorn.png)
+![Спутники-боты](assets/screenshots/03-bots.png)
+-->
+
+_Скриншотов пока нет — вклад приветствуется._
 
 ## Быстрый старт
 

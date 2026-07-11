@@ -1,5 +1,7 @@
 <!-- Language: **English** · [Русский](README.ru.md) -->
 
+![WoW Midnight Server](assets/banner.png)
+
 # WoW Midnight Server — TrinityCore 12.0.7 (build 68275)
 
 > A documented, community-maintained **World of Warcraft: Midnight** private
@@ -57,6 +59,28 @@ kept honest and playable:
 | Retail build | **12.0.7.68275** |
 
 ---
+
+![Content statistics](assets/stats.png)
+
+## Gallery
+
+### Architecture
+
+![Architecture](assets/architecture.png)
+
+### In-game screenshots
+
+> These are placeholders — drop your own real gameplay screenshots into
+> `assets/screenshots/` and they'll show up here. (We ship **no** Blizzard game
+> imagery; see [DISCLAIMER](DISCLAIMER.md).)
+
+<!--
+![Character creation](assets/screenshots/01-character.png)
+![Isle of Dorn](assets/screenshots/02-isle-of-dorn.png)
+![Companion bots](assets/screenshots/03-bots.png)
+-->
+
+_No screenshots yet — contributions welcome._
 
 ## Quick start
 
