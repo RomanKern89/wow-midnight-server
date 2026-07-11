@@ -1,0 +1,53 @@
+# ---- Secrets & credentials (NEVER commit) ----
+*.env
+.env*
+*credentials*
+*secret*
+*.pem
+*.key
+*.pfx
+*token*
+id_rsa*
+known_hosts
+
+# ---- Blizzard game assets / data (NOT redistributable) ----
+Data/
+data/
+*.MPQ
+*.build
+*.db2
+dbc/
+maps/
+vmaps/
+mmaps/
+cameras/
+Cache/
+*.trinity
+world_full.sql
+*_world_dump*.sql
+
+# ---- Third-party binaries / clients / launchers ----
+arctium/
+*.exe
+*.dll
+WoW*.exe
+
+# ---- Local server source clones ----
+tc-src/
+TrinityCore/
+build/
+
+# ---- Agent / tooling state ----
+.claude/
+.claude-flow/
+.swarm/
+*.db
+*.db-shm
+*.db-wal
+ruvector.db
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+*.swp
+*~
