@@ -82,7 +82,17 @@ kept honest and playable:
 
 _No screenshots yet — contributions welcome._
 
-## Quick start
+## Two ways to install
+
+| | Path | Guide |
+|---|------|-------|
+| 🛠 **Manual** | Build & run on the host directly | this branch — [docs/en/SETUP.md](docs/en/SETUP.md) |
+| 🐳 **Docker Compose** | Everything in containers, fixes auto-applied | [`docker` branch](https://github.com/RomanKern89/wow-midnight-server/tree/docker/docker) |
+
+Both lead to the same server. Either way you supply your own client-extracted
+data and world DB (Blizzard's property — see [DISCLAIMER](DISCLAIMER.md)).
+
+## Quick start (manual)
 
 1. **Build the core** — TrinityCore master. → [docs/en/SETUP.md](docs/en/SETUP.md)
 2. **Extract game data** from your own retail client (maps/vmaps/mmaps/dbc).
