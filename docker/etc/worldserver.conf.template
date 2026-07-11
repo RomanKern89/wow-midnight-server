@@ -1,0 +1,20 @@
+# Minimal worldserver.conf — rendered from env by entrypoint (envsubst).
+# Keys not listed here fall back to TrinityCore built-in defaults.
+
+[worldserver]
+
+LoginDatabaseInfo     = "${DB_HOST};3306;${DB_USER};${DB_PASS};auth"
+WorldDatabaseInfo     = "${DB_HOST};3306;${DB_USER};${DB_PASS};world"
+CharacterDatabaseInfo = "${DB_HOST};3306;${DB_USER};${DB_PASS};characters"
+HotfixDatabaseInfo    = "${DB_HOST};3306;${DB_USER};${DB_PASS};hotfixes"
+
+DataDir         = "/opt/tc/data"
+LogsDir         = "/opt/tc/logs"
+WorldServerPort = 8085
+BindIP          = "0.0.0.0"
+
+# We ship a custom (LoreWalker-based) world DB, so DO NOT let the auto-updater
+# touch the world DB. db-init.sh imports base auth/char/hotfix SQL explicitly.
+Updates.EnableDatabases = 0
+
+RealmID = 1
