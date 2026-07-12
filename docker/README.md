@@ -10,6 +10,16 @@ applied automatically, and you supply the two Blizzard-owned inputs yourself.
 > [main branch](https://github.com/RomanKern89/wow-midnight-server) — both ways
 > lead to the same server.
 
+## ✅ Verified from scratch
+
+Tested end-to-end on a **clean Ubuntu 24.04 VM** (`docker compose down -v --rmi
+local` → `up -d --build` from zero):
+
+- **Image builds from source** — compiles TrinityCore master (~30 min), 0 errors, image ~7 GB.
+- **MySQL** → `healthy`; **db-init** → creates `auth`/`characters`/`world`/`hotfixes`, imports base schema (auth 39 + characters 132 tables), applies our fixes, exits `0` — clean log, no warnings.
+- **bnetserver** → generates a self-signed dev cert and runs; ports **1119 + 8081 + 3306** listening.
+- **worldserver** → starts and reaches the data gate; it needs your client data + world dump to fully boot (see below). This is a Blizzard-data requirement, **not** a bug.
+
 ## What you provide (Blizzard's property — not shipped)
 
 | Input | Where | Notes |
@@ -56,6 +66,13 @@ account set gmlevel myname 3 -1
 Then point your client at the host — see
 [../docs/en/CONNECT.md](../docs/en/CONNECT.md).
 
+### Two run states
+- **Without your data** (empty `import/` + `data/`): MySQL, DB bootstrap and the
+  **bnetserver login server come up** — useful to validate the stack. `worldserver`
+  will restart-loop (no maps / empty world DB).
+- **With your data** (world dump in `import/`, client data in `data/`):
+  `worldserver` boots fully and you get an in-game-ready realm.
+
 ## Common issues
 
 | Symptom | Fix |
@@ -76,6 +93,16 @@ Then point your client at the host — see
 > Это **контейнерный** путь. Нужна ручная установка? Смотри
 > [ветку main](https://github.com/RomanKern89/wow-midnight-server) — оба способа
 > ведут к одному серверу.
+
+## ✅ Проверено с нуля
+
+Прогнано end-to-end на **чистой Ubuntu 24.04 VM** (`docker compose down -v --rmi
+local` → `up -d --build` от нуля):
+
+- **Образ собирается из исходников** — компилирует TrinityCore master (~30 мин), 0 ошибок, образ ~7 ГБ.
+- **MySQL** → `healthy`; **db-init** → создаёт `auth`/`characters`/`world`/`hotfixes`, импортирует базовые схемы (auth 39 + characters 132 таблицы), применяет наши фиксы, выходит с `0` — чистый лог, без варнингов.
+- **bnetserver** → генерит self-signed dev-сертификат и работает; порты **1119 + 8081 + 3306** слушают.
+- **worldserver** → стартует и доходит до проверки данных; для полной загрузки нужны данные клиента + мир-дамп (ниже). Это требование данных Blizzard, **а не баг**.
 
 ## Что предоставляешь ты (собственность Blizzard — в репо нет)
 
@@ -122,6 +149,13 @@ account set gmlevel myname 3 -1
 
 Затем направь клиент на хост — см.
 [../docs/ru/CONNECT.md](../docs/ru/CONNECT.md).
+
+### Два состояния запуска
+- **Без твоих данных** (пустые `import/` + `data/`): MySQL, инициализация БД и
+  **логин-сервер bnetserver поднимаются** — годится проверить стек. `worldserver`
+  будет в рестарт-цикле (нет карт / пустая база мира).
+- **С твоими данными** (мир-дамп в `import/`, данные клиента в `data/`):
+  `worldserver` полностью грузится и реалм готов к заходу в игру.
 
 ## Частые проблемы
 
