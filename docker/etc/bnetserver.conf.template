@@ -15,3 +15,9 @@ CertificatesFile = "/opt/tc/etc/bnetserver.cert.pem"
 PrivateKeyFile   = "/opt/tc/etc/bnetserver.key.pem"
 
 LogsDir = "/opt/tc/logs"
+
+# Logging — console only (Docker captures stdout). Silences the default
+# "Wrong Loggers configuration" warning.
+Appender.Console = 1,2,0
+Logger.root = 3,Console
+Logger.server.http.login = 3,Console

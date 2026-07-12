@@ -18,3 +18,9 @@ BindIP          = "0.0.0.0"
 Updates.EnableDatabases = 0
 
 RealmID = 1
+
+# Logging — console only (Docker captures stdout). Silences the default
+# "Wrong Loggers configuration" warning.
+Appender.Console = 1,3,0
+Logger.root = 5,Console
+Logger.server = 3,Console
