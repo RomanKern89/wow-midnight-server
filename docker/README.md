@@ -18,22 +18,26 @@ local` → `up -d --build` from zero):
 - **Image builds from source** — compiles TrinityCore master (~30 min), 0 errors, image ~7 GB.
 - **MySQL** → `healthy`; **db-init** → creates `auth`/`characters`/`world`/`hotfixes`, imports base schema (auth 39 + characters 132 tables), applies our fixes, exits `0` — clean log, no warnings.
 - **bnetserver** → generates a self-signed dev cert and runs; ports **1119 + 8081 + 3306** listening.
-- **worldserver** → starts and reaches the data gate; it needs your client data + world dump to fully boot (see below). This is a Blizzard-data requirement, **not** a bug.
+- **worldserver** → with real data provided (world + hotfixes dumps + client data, on a 20 GB VM) it **boots fully**: *"World initialized in 4 minutes 12 seconds"*, all four ports (1119/8081/8085/3306) live, 0 restarts. Without your data it reaches the data gate and waits — a Blizzard-data requirement, **not** a bug.
 
 ## What you provide (Blizzard's property — not shipped)
 
 | Input | Where | Notes |
 |-------|-------|-------|
 | Client-extracted data (dbc/maps/vmaps/mmaps) | `docker/data/` | From your own retail client (build 68275) |
-| A world DB dump @68275 | `docker/import/*.sql` | Imported on first run |
+| `world.sql` dump @68275 | `docker/import/` | quests/spawns/loot (+ our fixes on top) |
+| `hotfixes.sql` dump @68275 | `docker/import/` | **required** — worldserver crash-loops without it |
 
 Everything else — schema creation, base auth/character import, **our fixes**,
-config rendering, a self-signed login cert — is automatic.
+config rendering, a self-signed login cert — is automatic. See
+[import/README.md](import/README.md) for how to produce the dumps.
 
 ## Requirements
 
 - Docker Engine + Docker Compose v2
-- **24 GB+ RAM** and time for the first build (the core compiles from source)
+- **Build:** 24 GB+ RAM and time (the core compiles from source, ~30 min)
+- **Run (full worldserver):** **16–20 GB RAM** — a full retail world (≈734k
+  spawns + maps) OOM-kills at 8 GB. MySQL + bnetserver alone run in ~2 GB.
 - Ports free: `8085` (world), `1119` (bnet), `8081` (REST login), `3306` (MySQL)
 
 ## Steps
@@ -102,22 +106,26 @@ local` → `up -d --build` от нуля):
 - **Образ собирается из исходников** — компилирует TrinityCore master (~30 мин), 0 ошибок, образ ~7 ГБ.
 - **MySQL** → `healthy`; **db-init** → создаёт `auth`/`characters`/`world`/`hotfixes`, импортирует базовые схемы (auth 39 + characters 132 таблицы), применяет наши фиксы, выходит с `0` — чистый лог, без варнингов.
 - **bnetserver** → генерит self-signed dev-сертификат и работает; порты **1119 + 8081 + 3306** слушают.
-- **worldserver** → стартует и доходит до проверки данных; для полной загрузки нужны данные клиента + мир-дамп (ниже). Это требование данных Blizzard, **а не баг**.
+- **worldserver** → с реальными данными (world + hotfixes дампы + данные клиента, на VM с 20 ГБ) **полностью грузится**: *«World initialized in 4 minutes 12 seconds»*, все четыре порта (1119/8081/8085/3306) живы, 0 рестартов. Без данных доходит до проверки и ждёт — это требование данных Blizzard, **а не баг**.
 
 ## Что предоставляешь ты (собственность Blizzard — в репо нет)
 
 | Вход | Куда | Примечание |
 |------|------|-----------|
 | Данные из клиента (dbc/maps/vmaps/mmaps) | `docker/data/` | Из своего ретейл-клиента (билд 68275) |
-| Дамп базы мира @68275 | `docker/import/*.sql` | Импортируется при первом запуске |
+| Дамп `world.sql` @68275 | `docker/import/` | квесты/спавны/лут (+ наши фиксы сверху) |
+| Дамп `hotfixes.sql` @68275 | `docker/import/` | **обязателен** — без него worldserver крашлупит |
 
 Всё остальное — создание схем, импорт баз auth/characters, **наши фиксы**,
-рендер конфигов, самоподписанный логин-сертификат — автоматически.
+рендер конфигов, самоподписанный логин-сертификат — автоматически. Как снять
+дампы — в [import/README.md](import/README.md).
 
 ## Требования
 
 - Docker Engine + Docker Compose v2
-- **24 ГБ+ RAM** и время на первую сборку (ядро компилируется из исходников)
+- **Сборка:** 24 ГБ+ RAM и время (ядро компилируется из исходников, ~30 мин)
+- **Запуск (полный worldserver):** **16–20 ГБ RAM** — полный ретейл-мир (≈734к
+  спавнов + карты) при 8 ГБ падает от OOM. MySQL + bnetserver отдельно — ~2 ГБ.
 - Свободные порты: `8085` (мир), `1119` (bnet), `8081` (REST-логин), `3306` (MySQL)
 
 ## Шаги
