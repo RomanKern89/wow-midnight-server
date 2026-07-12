@@ -41,7 +41,9 @@ if ! have_tables world; then
   DUMP=$(ls -1 /import/*.sql 2>/dev/null | head -1 || true)
   if [ -n "$DUMP" ]; then
     echo ">> Importing world dump: $DUMP  (this can take a while)"
-    user_sql world < "$DUMP"
+    # Import as root (has SUPER) and strip DEFINER clauses so a third-party
+    # dump's stored functions/views/triggers import cleanly under any user.
+    sed 's/DEFINER=`[^`]*`@`[^`]*`//g' "$DUMP" | root_sql world
   else
     echo "!! No world DB dump found in ./import — the world DB is EMPTY."
     echo "!! Drop a build-68275 world dump into docker/import/ and re-run 'docker compose up db-init'."
