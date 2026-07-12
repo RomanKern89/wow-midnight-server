@@ -10,7 +10,9 @@ services:
     image: mysql:8.0
     container_name: tc-mysql
     restart: unless-stopped
-    command: --default-authentication-plugin=mysql_native_password --max_allowed_packet=256M
+    # log-bin-trust-function-creators: world dumps contain stored functions;
+    # without it a non-SUPER user hits ERROR 1419 on import when binlog is on.
+    command: --default-authentication-plugin=mysql_native_password --max_allowed_packet=1G --log-bin-trust-function-creators=1
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
       MYSQL_USER: ${DB_USER:-trinity}
