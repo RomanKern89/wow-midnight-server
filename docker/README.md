@@ -6,6 +6,10 @@ Run the whole stack — MySQL, worldserver, bnetserver — in containers. The co
 is built from TrinityCore source inside the image, our community fixes are
 applied automatically, and you supply the two Blizzard-owned inputs yourself.
 
+> 🆕 **New to this? Follow the step‑by‑step [INSTALL.md](INSTALL.md)** — a
+> complete beginner guide (system requirements → running server), EN + RU.
+> The notes below are the quick reference.
+
 > This is the **containerized** path. Prefer a manual install? See the
 > [main branch](https://github.com/RomanKern89/wow-midnight-server) — both ways
 > lead to the same server.
