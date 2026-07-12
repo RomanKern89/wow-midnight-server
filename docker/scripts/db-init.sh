@@ -36,20 +36,37 @@ if ! have_tables characters && [ -f "$SQLBASE/base/characters_database.sql" ]; t
   echo ">> Importing characters base schema"; user_sql characters < "$SQLBASE/base/characters_database.sql"
 fi
 
+# Import a .sql dump into a DB as root, stripping DEFINER clauses so a
+# third-party dump's stored functions/views/triggers import under any user.
+import_dump() { sed 's/DEFINER=`[^`]*`@`[^`]*`//g' "$1" | root_sql "$2"; }
+
 # --- world DB: YOUR dump (Blizzard-derived; we ship none — see docker/import/) ---
 if ! have_tables world; then
-  DUMP=$(ls -1 /import/*.sql 2>/dev/null | head -1 || true)
+  DUMP=$(ls -1 /import/world*.sql 2>/dev/null | head -1 || true)
+  [ -z "$DUMP" ] && DUMP=$(ls -1 /import/*.sql 2>/dev/null | grep -iv hotfix | head -1 || true)
   if [ -n "$DUMP" ]; then
     echo ">> Importing world dump: $DUMP  (this can take a while)"
-    # Import as root (has SUPER) and strip DEFINER clauses so a third-party
-    # dump's stored functions/views/triggers import cleanly under any user.
-    sed 's/DEFINER=`[^`]*`@`[^`]*`//g' "$DUMP" | root_sql world
+    import_dump "$DUMP" world
   else
     echo "!! No world DB dump found in ./import — the world DB is EMPTY."
-    echo "!! Drop a build-68275 world dump into docker/import/ and re-run 'docker compose up db-init'."
+    echo "!! Drop a build-68275 world dump (world.sql) into docker/import/ and re-run 'docker compose up db-init'."
   fi
 else
   echo ">> world DB already populated — skipping dump import."
+fi
+
+# --- hotfixes DB: modern retail worldserver REQUIRES its schema to boot ---
+if ! have_tables hotfixes; then
+  HF=$(ls -1 /import/hotfixes*.sql 2>/dev/null | head -1 || true)
+  if [ -n "$HF" ]; then
+    echo ">> Importing hotfixes dump: $HF"
+    import_dump "$HF" hotfixes
+  else
+    echo "!! No hotfixes dump found in ./import — the hotfixes DB is EMPTY."
+    echo "!! worldserver will CRASH-LOOP without it. Drop hotfixes.sql into docker/import/."
+  fi
+else
+  echo ">> hotfixes DB already populated — skipping."
 fi
 
 # --- our community fixes (always safe to re-apply: INSERT IGNORE / idempotent UPDATEs) ---
