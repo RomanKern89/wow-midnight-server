@@ -37,6 +37,13 @@ RUN git init -q /src  && git -C /src remote add origin https://github.com/Trinit
 # Companion bots (see bots/README.md) — dropped into the standard custom-script
 # directory BEFORE cmake runs, so they are compiled into the same binary. They
 # add no core patches; TrinityCore's own custom_script_loader picks them up.
+# The one core patch the bots need — Player::InitializeEmptySocial(), nine lines.
+# A socket-less bot never runs the login pipeline that loads its social list, so
+# the pointer stays null and the first thing to consult it dereferences nothing.
+# See bots/core-patch/README.md.
+COPY bots/core-patch /core-patch
+RUN git -C /src apply /core-patch/0001-player-initialize-empty-social.patch  && echo "core patch applied"
+
 COPY bots/src /src/src/server/scripts/Custom/Bots/
 # ...and the loader that actually registers them. TrinityCore ships an EMPTY
 # AddCustomScripts(); leave it in place and the scripts compile, link, and are
