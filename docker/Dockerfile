@@ -2,7 +2,8 @@
 # TrinityCore master (retail, build 12.0.7-compatible) — multi-stage build.
 # Stage 1 compiles the core from source; stage 2 is a slim runtime image.
 #
-# Build is heavy: give Docker 24 GB+ RAM and expect a long first build.
+# Build is heavy: give Docker 24 GB+ RAM and expect a long first build. The
+# companion-bot scripts are compiled in as part of this stage.
 # Data-extraction tools are intentionally OFF (TOOLS=0) — you extract client
 # data on your own WoW client machine, then mount it (see docker/README.md).
 # =====================================================================
@@ -20,6 +21,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 -b ${TC_BRANCH} https://github.com/TrinityCore/TrinityCore.git /src
+
+# Companion bots (see bots/README.md) — dropped into the standard custom-script
+# directory BEFORE cmake runs, so they are compiled into the same binary. They
+# add no core patches; TrinityCore's own custom_script_loader picks them up.
+COPY bots/src /src/src/server/scripts/Custom/Bots/
+
 WORKDIR /src/build
 RUN cmake .. \
       -DCMAKE_INSTALL_PREFIX=/opt/tc \

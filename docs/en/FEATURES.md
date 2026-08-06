@@ -34,9 +34,16 @@
   scripts resolve); classic dungeons drive bosses via SmartAI.
 - **Newest zones** (Khaz Algar, Isle of Dorn, **Harandar** map 2694) populated
   and **resurrect-able** (graveyards added for the newest zone).
-- **Companion bots**:
-  - `.bot` — creature-based companions (Phase 1/2).
-  - `.pbot` — fake-player bots with persistence and combat rotations (Phase 3).
+- **A world that is populated without players** — see [`bots/README.md`](../../bots/README.md).
+  Socket-less fake players that fight, gather, smelt and craft, sell junk, repair
+  per slot, list goods at the auction house and buy upgrades they then wear, take
+  quests and walk to where the objectives are, group up, chat, mount for long
+  journeys and move zone when they outgrow one. They survive server restarts and
+  keep their progress.
+  - `.bot` — creature-based companions that follow you.
+  - `.pbot` — fake-player bots, both as companions and as an autonomous population.
+  - `.pbot world time` reports where the population's day actually goes; the same
+    diagnostics found every defect listed in that README.
 
 ## Honest limitations (documented, not hidden)
 
@@ -52,6 +59,13 @@ These are engine/data ceilings, not silent breakage:
 - **Empty newest maps** (3047 / 3075) — no public spawn data exists yet.
 - **Long-tail loot / vendors** — filled to the public-data ceiling; the residual
   gaps have no public source.
+- **Bot questing throughput** — bots complete quests but deliver only a handful
+  per session, because most takers end up on another continent. Bot crafting is
+  likewise a trickle. Both are measured and documented in `bots/README.md`
+  rather than glossed over.
+- **Stray spawns and drifting holidays** exist in any default world database —
+  raid bosses in starter cities, festivals firing on the wrong dates. Fixed here
+  by `sql/05` and `sql/06`, with the method written down so you can repeat it.
 
 ## Data completeness philosophy
 
