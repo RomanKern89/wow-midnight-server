@@ -32,6 +32,10 @@ RUN git clone -b ${TC_BRANCH} https://github.com/TrinityCore/TrinityCore.git /sr
 # directory BEFORE cmake runs, so they are compiled into the same binary. They
 # add no core patches; TrinityCore's own custom_script_loader picks them up.
 COPY bots/src /src/src/server/scripts/Custom/Bots/
+# ...and the loader that actually registers them. TrinityCore ships an EMPTY
+# AddCustomScripts(); leave it in place and the scripts compile, link, and are
+# never called — a clean build of a server where .pbot does not exist.
+COPY bots/custom_script_loader.cpp /src/src/server/scripts/Custom/custom_script_loader.cpp
 
 WORKDIR /src/build
 RUN cmake .. \
