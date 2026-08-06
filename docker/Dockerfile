@@ -11,6 +11,12 @@
 # ---------- build stage ----------
 FROM ubuntu:24.04 AS build
 ARG TC_BRANCH=master
+# Pinned by default to the revision this repository's fixes and companion-bot
+# scripts are known to compile and run against. TrinityCore master moves daily;
+# an unpinned clone means the image you build tomorrow is not the image that was
+# tested today, and the first sign of that is a compile error in someone else's
+# checkout. Override with --build-arg TC_COMMIT= (empty) to take branch tip.
+ARG TC_COMMIT=c9e3fd8df5cb
 ARG BUILD_JOBS=
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -20,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 -b ${TC_BRANCH} https://github.com/TrinityCore/TrinityCore.git /src
+RUN git clone -b ${TC_BRANCH} https://github.com/TrinityCore/TrinityCore.git /src  && if [ -n "${TC_COMMIT}" ]; then git -C /src checkout --detach "${TC_COMMIT}"; fi  && git -C /src log -1 --format='building TrinityCore %h %cd' 
 
 # Companion bots (see bots/README.md) — dropped into the standard custom-script
 # directory BEFORE cmake runs, so they are compiled into the same binary. They
