@@ -16,7 +16,9 @@ ARG TC_BRANCH=master
 # an unpinned clone means the image you build tomorrow is not the image that was
 # tested today, and the first sign of that is a compile error in someone else's
 # checkout. Override with --build-arg TC_COMMIT= (empty) to take branch tip.
-ARG TC_COMMIT=c9e3fd8df5cb
+# Must be the FULL 40-character SHA: a shallow fetch of a short hash is refused
+# outright ("couldn't find remote ref").
+ARG TC_COMMIT=c9e3fd8df5cb999e2d84eb50d565ab056614533c
 ARG BUILD_JOBS=
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,7 +28,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-RUN git clone -b ${TC_BRANCH} https://github.com/TrinityCore/TrinityCore.git /src  && if [ -n "${TC_COMMIT}" ]; then git -C /src checkout --detach "${TC_COMMIT}"; fi  && git -C /src log -1 --format='building TrinityCore %h %cd' 
+# Fetch ONE commit, not the project's history. Pinning by cloning everything and
+# then checking out the pin downloads roughly two gigabytes to use a few hundred
+# megabytes of it: measured on a test host, 65+ minutes against 6m35s for the
+# shallow fetch below. GitHub serves a full SHA to --depth 1 quite happily.
+RUN git init -q /src  && git -C /src remote add origin https://github.com/TrinityCore/TrinityCore.git  && git -C /src fetch --depth 1 origin "${TC_COMMIT:-${TC_BRANCH}}"  && git -C /src checkout -q FETCH_HEAD  && git -C /src log -1 --format='building TrinityCore %h %cd' 
 
 # Companion bots (see bots/README.md) — dropped into the standard custom-script
 # directory BEFORE cmake runs, so they are compiled into the same binary. They
