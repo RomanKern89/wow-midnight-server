@@ -90,23 +90,49 @@ The Docker image in this repository does it for you — `docker/Dockerfile` copi
 
 ```dockerfile
 COPY bots/src /src/src/server/scripts/Custom/Bots/
+COPY bots/custom_script_loader.cpp /src/src/server/scripts/Custom/custom_script_loader.cpp
 ```
 
-By hand, into an existing checkout:
+By hand, into an existing checkout — **both steps**:
 
 ```bash
 cp bots/src/* /path/to/TrinityCore/src/server/scripts/Custom/Bots/
+cp bots/custom_script_loader.cpp /path/to/TrinityCore/src/server/scripts/Custom/
 cd /path/to/TrinityCore/build && cmake .. -DSCRIPTS=static && make -j$(nproc) && make install
 ```
 
-`bot_script_loader.cpp` follows the standard per-directory convention, so
-TrinityCore's own `custom_script_loader.cpp` picks the scripts up with no
-further wiring.
+The second file matters more than it looks. `bot_script_loader.cpp` follows the
+standard per-directory convention and defines `AddBotsScripts()`, but the core
+only ever calls `AddCustomScripts()` — and TrinityCore ships that as an **empty
+stub**. Copy only the sources and you get a clean build, a server that starts
+normally, and no `.pbot` command anywhere: the scripts are compiled in and never
+registered.
+
+TrinityCore collects source files at CMake **configure** time, so re-run `cmake`
+after adding files, not just `make`.
 
 **Cost:** a bot is a full `Player` tick. Sixty bots on five continents run
 comfortably in the RAM figures given in `docker/INSTALL.md` — the memory goes on
 the *maps and zones they occupy*, not on the bots themselves, so spreading them
 thin costs more than stacking them.
+
+---
+
+## Verification status — read before deploying
+
+The bot scripts are built and run continuously on a live server (Ubuntu 24.04,
+gcc 13.3.0, TrinityCore `c9e3fd8df5cb`, `SCRIPTS=dynamic`) — that is where every
+measurement above comes from.
+
+The **Docker image has not been built with the bots in it yet.** The image base
+matches the live server exactly (same Ubuntu, same compiler, same pinned core
+revision, same sources), so the remaining difference is one axis: the image
+compiles with `SCRIPTS=static` where the live server uses `dynamic`. That is
+stated here rather than glossed, because "it should work" and "it was seen to
+work" are not the same claim and this README makes several of the second kind.
+
+If you build it and it fails, the failure is worth an issue — it is information
+this repository does not have.
 
 ---
 
