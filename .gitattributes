@@ -1,0 +1,7 @@
+# A patch file with CRLF endings does not apply on Linux — and the container that
+# applies this one is Linux. Keep it byte-exact regardless of the checkout host.
+*.patch  -text
+*.sh     text eol=lf
+*.cpp    text eol=lf
+*.h      text eol=lf
+*.sql    text eol=lf
