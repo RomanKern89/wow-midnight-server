@@ -24,3 +24,21 @@ RealmID = 1
 Appender.Console = 1,3,0
 Logger.root = 5,Console
 Logger.server = 3,Console
+
+# The companion bots log under "scripts.bots". Without this line they are SILENT:
+# TrinityCore's levels run the opposite way to intuition, and root = 5 means
+# errors only, so everything the bots report is discarded. A server deployed
+# without it looks exactly like a server with no bots in it — which is precisely
+# how this was found, on an image where they were running perfectly all along.
+Logger.scripts.bots = 3,Console
+
+###############################################################################
+# COMPANION BOTS
+#
+# How many autonomous bots to bring into the world at startup. 0 disables them
+# entirely and the server costs nothing extra. See bots/README.md for what they
+# do and what a population costs in RAM.
+#
+# They can also be summoned at any time from the console with
+#   .pbot world populate <count>
+Pbot.WorldPopulation = 0
