@@ -1,0 +1,31 @@
+diff --git a/src/server/game/Entities/Player/Player.cpp b/src/server/game/Entities/Player/Player.cpp
+index 785533de..2ac2fdc2 100644
+--- a/src/server/game/Entities/Player/Player.cpp
++++ b/src/server/game/Entities/Player/Player.cpp
+@@ -376,6 +376,12 @@ Player::~Player()
+     sWorld->DecreasePlayerCount();
+ }
+ 
++void Player::InitializeEmptySocial()
++{
++    // SocialMgr::LoadFromDB tolerates a null result and returns a valid empty PlayerSocial.
++    m_social = sSocialMgr->LoadFromDB(PreparedQueryResult(), GetGUID());
++}
++
+ void Player::CleanupsBeforeDelete(bool finalCleanup)
+ {
+     TradeCancel(false);
+diff --git a/src/server/game/Entities/Player/Player.h b/src/server/game/Entities/Player/Player.h
+index dbe0e949..d71aa333 100644
+--- a/src/server/game/Entities/Player/Player.h
++++ b/src/server/game/Entities/Player/Player.h
+@@ -1287,6 +1287,9 @@ class TC_GAME_API Player final : public Unit, public GridObject<Player>
+         int64 GetBarberShopCost(Trinity::IteratorPair<UF::ChrCustomizationChoice const*> newCustomizations) const;
+ 
+         PlayerSocial* GetSocial() const { return m_social; }
++        // Custom (companion pbots): assign a valid EMPTY social for socket-less bot players that
++        // never run the LoadFromDB login pipeline. See scripts/Custom/Bots/pbot_mgr.cpp.
++        void InitializeEmptySocial();
+         void RemoveSocial();
+ 
+         PlayerTaxi m_taxi;

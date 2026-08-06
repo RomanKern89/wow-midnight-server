@@ -5,9 +5,12 @@ real `Player` objects with a null-socket `WorldSession`, driven by their own
 decision loop. They fight, gather, craft, quest, repair, trade at the auction
 house, group up and talk. Nobody has to be logged in for any of it to happen.
 
-Written for **TrinityCore master, retail 12.0.7 (build 68275)**. Nothing here
-patches the core: every file lives under `src/server/scripts/Custom/Bots/` and
-uses public engine APIs only.
+Written for **TrinityCore master, retail 12.0.7 (build 68275)**. Almost all of it
+lives under `src/server/scripts/Custom/Bots/` and uses public engine APIs, with
+**one nine-line core patch** — `bots/core-patch/`, applied automatically by the
+Docker build. A socket-less bot never runs the login pipeline that loads its
+social list, `m_social` is private with no setter, and the first piece of engine
+code to consult it dereferences null.
 
 ---
 
@@ -89,16 +92,19 @@ The Docker image in this repository does it for you — `docker/Dockerfile` copi
 `bots/src` into the TrinityCore tree before compiling:
 
 ```dockerfile
+RUN git -C /src apply /core-patch/0001-player-initialize-empty-social.patch
 COPY bots/src /src/src/server/scripts/Custom/Bots/
 COPY bots/custom_script_loader.cpp /src/src/server/scripts/Custom/custom_script_loader.cpp
 ```
 
-By hand, into an existing checkout — **both steps**:
+By hand, into an existing checkout — **all three steps**:
 
 ```bash
-cp bots/src/* /path/to/TrinityCore/src/server/scripts/Custom/Bots/
-cp bots/custom_script_loader.cpp /path/to/TrinityCore/src/server/scripts/Custom/
-cd /path/to/TrinityCore/build && cmake .. -DSCRIPTS=static && make -j$(nproc) && make install
+cd /path/to/TrinityCore
+git apply /path/to/bots/core-patch/0001-player-initialize-empty-social.patch
+cp /path/to/bots/src/* src/server/scripts/Custom/Bots/
+cp /path/to/bots/custom_script_loader.cpp src/server/scripts/Custom/
+cd build && cmake .. -DSCRIPTS=static && make -j$(nproc) && make install
 ```
 
 The second file matters more than it looks. `bot_script_loader.cpp` follows the
@@ -124,15 +130,18 @@ The bot scripts are built and run continuously on a live server (Ubuntu 24.04,
 gcc 13.3.0, TrinityCore `c9e3fd8df5cb`, `SCRIPTS=dynamic`) — that is where every
 measurement above comes from.
 
-The **Docker image has not been built with the bots in it yet.** The image base
-matches the live server exactly (same Ubuntu, same compiler, same pinned core
-revision, same sources), so the remaining difference is one axis: the image
-compiles with `SCRIPTS=static` where the live server uses `dynamic`. That is
-stated here rather than glossed, because "it should work" and "it was seen to
-work" are not the same claim and this README makes several of the second kind.
+The Docker image **was** built from a clean checkout, and the first attempt
+failed:
 
-If you build it and it fails, the failure is worth an issue — it is information
-this repository does not have.
+```
+pbot_mgr.cpp:349: error: 'class Player' has no member named 'InitializeEmptySocial'
+```
+
+That is how the core patch above was discovered. This README had claimed the
+bots patch nothing — written from how they were designed rather than from a
+build, while the live server's own version string had said `c9e3fd8df5cb+` for
+months, the `+` meaning a modified tree. Nothing short of building it would have
+found that.
 
 ---
 
