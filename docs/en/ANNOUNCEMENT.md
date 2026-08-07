@@ -88,7 +88,8 @@ the docs, with measurements.
 ### Getting started
 
 - **[Getting the client](https://github.com/RomanKern89/wow-midnight-server/blob/main/docs/en/CLIENT.md)** — you download it from Blizzard
-  yourself; it is a free download and the guide pins the exact build.
+  yourself; it is a free download. Note that you always get the build that is
+  live right now — nothing can install an older one, so check first.
 - **[Server setup](https://github.com/RomanKern89/wow-midnight-server/blob/main/docs/en/SETUP.md)** — build TrinityCore, extract your data.
 - **[Connecting](https://github.com/RomanKern89/wow-midnight-server/blob/main/docs/en/CONNECT.md)** — Arctium plus one line in `Config.wtf`.
 - **[The fixes](https://github.com/RomanKern89/wow-midnight-server/blob/main/docs/en/FIXES.md)** — what each one repairs and why.

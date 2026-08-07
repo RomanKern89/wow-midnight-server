@@ -5,9 +5,15 @@
 # WoW Midnight Server — TrinityCore 12.0.7 (build 68275)
 
 > A documented, community-maintained **World of Warcraft: Midnight** private
-> server built on **TrinityCore master**, at the current retail build
-> **12.0.7.68275** — plus a set of original server-side fixes that make the
-> newest content actually playable.
+> server built on **TrinityCore master**, on the retail **12.0.7** line —
+> plus a set of original server-side fixes that make the newest content actually
+> playable.
+
+> **On build numbers:** everything here is written against build
+> **12.0.7.68275**, which was the live retail build on 2026-07-05. Retail moves
+> every few weeks and nothing can install an older build, so a client downloaded
+> today will be newer. Point the server at whatever build you can actually get —
+> see **[CLIENT.md](docs/en/CLIENT.md)**.
 
 **🌐 Language:** **English** · [Русский](README.ru.md)
 
@@ -26,7 +32,7 @@ kept honest and playable:
 
 | | This project | Typical private server |
 |---|---|---|
-| **Client build** | **12.0.7.68275 (Midnight, current retail)** | 3.3.5a / 4.3.4 / 5.4.8 |
+| **Client build** | **12.0.7 (Midnight)** — the current retail line | 3.3.5a / 4.3.4 / 5.4.8 |
 | **Races** | All 26 incl. **allied races unlocked**, Dracthyr **Evoker intro** working | Classic races only |
 | **Content span** | Vanilla → Midnight in one DB, **517 maps** populated | Single-expansion |
 | **A world that lives** | **60 autonomous bots** that fight, gather, smelt, craft, trade, quest and talk — with no player logged in | Usually none / 3rd-party only |
@@ -92,9 +98,10 @@ _No screenshots yet — contributions welcome._
 
 ## Quick start
 
-0. **Get the client** — you download it from Blizzard yourself; it's a free
-   download and the guide pins the exact build so it can't drift out of sync
-   with your database. → **[docs/en/CLIENT.md](docs/en/CLIENT.md)**
+0. **Get the client** — you download it from Blizzard yourself, free. Note that
+   you always get whatever build is **live right now**; nothing can install an
+   older one, so check before downloading 100 GB.
+   → **[docs/en/CLIENT.md](docs/en/CLIENT.md)**
 1. **Build the core** — TrinityCore master. → [docs/en/SETUP.md](docs/en/SETUP.md)
 2. **Extract game data** from your own retail client (maps/vmaps/mmaps/dbc).
 3. **Import the world DB** and run `worldserver` + `bnetserver`.
@@ -104,7 +111,8 @@ _No screenshots yet — contributions welcome._
 ### The short way (two scripts)
 
 ```powershell
-# on YOUR PC - installs the client at the right build and points it at the server
+# on YOUR PC - installs a retail client and points it at the server.
+# Checks the build against your server's BEFORE downloading and stops if they differ.
 .\scripts\setup-client.ps1 -InstallDir C:\Games\WoW -ServerIP 192.168.1.50
 ```
 ```bash
@@ -146,7 +154,7 @@ Fix details: **[docs/en/FIXES.md](docs/en/FIXES.md)**
 ├── docker/                       Compose deployment (INSTALL.md is the guide)
 ├── sql/                          Community fix SQL (reversible, ID-band-safe)
 └── scripts/
-    ├── setup-client.ps1          Install the client at the right build + point it at your server
+    ├── setup-client.ps1          Install a retail client, check the build, point it at your server
     ├── create-account.sh         Create a Battle.net account (+ GM level) on a running server
     ├── apply_fixes.sh            Apply the SQL fix pack
     └── vmssh.py                  SSH helper (credentials from env vars)
