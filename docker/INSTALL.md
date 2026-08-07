@@ -151,6 +151,36 @@ LOGIN_REST_EXTERNAL_ADDRESS=192.168.1.50
 
 Find this machine's IP with: `hostname -I`.
 
+### Bring the world to life (optional)
+
+The companion bots are compiled into the image already. They stay switched off
+until you ask for them — an idle server pays nothing:
+
+```bash
+nano etc/worldserver.conf.template
+```
+
+```ini
+Pbot.WorldPopulation = 10     # 0 = off. Start small; see the RAM note below.
+```
+
+Or summon them at any time without a restart, from the running console:
+
+```bash
+docker attach tc-worldserver          # Ctrl-P Ctrl-Q to leave it running
+.pbot world populate 10
+.pbot world time                      # where their day actually goes
+```
+
+> **Give them room.** A population's cost is the maps and zones it keeps loaded,
+> not the bots themselves — ten bots in ten zones cost more than sixty in one.
+> On a 20 GB host the full world alone settles around 14 GB and ten scattered
+> bots took the rest, at which point the machine stopped answering SSH while
+> still replying to pings. Budget **26 GB+** for the full world with a
+> population, or keep it small and local.
+
+What they do, with measurements: [`bots/README.md`](../bots/README.md).
+
 ---
 
 ## 6. Build and launch
@@ -404,6 +434,36 @@ LOGIN_REST_EXTERNAL_ADDRESS=192.168.1.50
 ```
 
 Узнать IP машины: `hostname -I`.
+
+### Оживить мир (по желанию)
+
+Боты уже собраны в образе и молчат, пока их не позовут, — простаивающий сервер
+за них не платит:
+
+```bash
+nano etc/worldserver.conf.template
+```
+
+```ini
+Pbot.WorldPopulation = 10     # 0 — выключено. Начните с малого, см. заметку о памяти
+```
+
+Либо вызвать их в любой момент без перезапуска, из работающей консоли:
+
+```bash
+docker attach tc-worldserver          # выйти, не останавливая: Ctrl-P Ctrl-Q
+.pbot world populate 10
+.pbot world time                      # на что на самом деле уходит их день
+```
+
+> **Дайте им место.** Население стоит не самих ботов, а **карт и зон, которые
+> они держат загруженными**: десять ботов в десяти зонах дороже шестидесяти в
+> одной. На хосте с 20 ГБ полный мир занимает около 14 ГБ, и десять рассеянных
+> ботов забрали остаток — машина перестала отвечать по SSH, продолжая отвечать
+> на ping. Закладывайте **26 ГБ и больше** на полный мир с населением, либо
+> держите его небольшим и в одной местности.
+
+Что они умеют, с числами: [`bots/README.ru.md`](../bots/README.ru.md).
 
 ---
 
