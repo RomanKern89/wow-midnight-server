@@ -15,7 +15,7 @@
 | Quests | **48,257** |
 | Quest objectives | 61,101 |
 | Quest starters / enders (NPC) | 27,694 / 34,524 |
-| Creature templates / spawns | 227,684 / 733,928 |
+| Creature templates / spawns | 227,684 / 733,485 |
 | GameObject templates / spawns | 89,967 / 197,724 |
 | Maps with spawns | 517 |
 | Loot rows | 3,084,867 |

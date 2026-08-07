@@ -40,28 +40,34 @@ with a version mismatch. Use Option B when you need a specific build.
 
 ---
 
-## Option B — BNetInstaller (pin an exact build)
+## Option B — a CDN installer tool (pin an exact build)
 
-[BNetInstaller](https://github.com/Marlamin/BNetInstaller) is an open-source tool
-that downloads product files **directly from Blizzard's own CDN** using Blizzard's
-public product manifests. It fetches the same bits the Battle.net app would; the
-difference is that you choose the product and build instead of always getting the
-newest one.
+Community tools exist that download product files **directly from Blizzard's own
+CDN** using Blizzard's public product manifests. They fetch the same bits the
+Battle.net app would; the difference is that you choose the product and build
+instead of always receiving the newest one. **BNetInstaller** is the one this
+project's reference server was built with.
+
+These tools are maintained by individuals and move between forks, so this guide
+deliberately does not hard-code a repository link that would rot. Search GitHub
+for `BNetInstaller` and prefer an actively maintained fork; check that the
+product you need is supported before relying on it, since support for a new
+expansion often lands in a fork or an open pull request before the main branch.
+
+The interface is typically a product code plus a target directory:
 
 ```bash
 BNetInstaller.exe --prod wow --dir "C:\Games\WoW_Midnight"
 ```
 
-Useful flags:
+Common flags are `--prod` (product code — `wow` is retail, and the `Product`
+field in `.build.info` of any existing install shows you the exact code),
+`--dir` (install directory) and `--lang` (locale, e.g. `enUS`, `ruRU`). Confirm
+the actual flags against the tool you downloaded — they differ between forks.
 
-- `--prod` — product code (`wow` retail, `wowt` PTR, `wow_beta`).
-- `--dir` — install directory.
-- `--lang` — locale (`enUS`, `ruRU`, …).
-
-**Note on the Midnight product:** at the time this was written, support for the
-Midnight product line was not yet in the tool's main branch and came from a
-pending pull request (#27). If `--prod` does not list it, check the repository's
-open pull requests before assuming the product is unavailable.
+> If you only need the client to *extract server data* rather than to play, you
+> can skip this entirely: the TrinityCore extractors read Blizzard's CASC storage
+> online. See [Extracting without a full install](#extracting-without-a-full-install).
 
 ---
 
