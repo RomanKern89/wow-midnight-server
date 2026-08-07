@@ -3,10 +3,14 @@
 Original, additive server-side fixes authored for a **TrinityCore master** world
 database at retail build **12.0.7.68275 (Midnight)**.
 
-Every file is **safe to apply twice** — each one clears its own custom ID band
-(or uses `INSERT IGNORE`) before inserting — and every file ends with a **revert
-comment** that undoes exactly what it did. All six were verified by applying them
-twice in a row to a clean database.
+Every file is **safe to apply twice** — each one clears its own custom ID band,
+uses `INSERT IGNORE`, or creates its backup table only if absent — and every file
+ends with a **revert comment** that undoes exactly what it did.
+
+All **eleven** were verified by rolling a copy of a real database back to its
+broken state, applying each fix, confirming the defect count reaches zero,
+applying it a second time with the backup tables proven untouched, and finally
+running the documented revert to check the original numbers come back exactly.
 
 | File | What it fixes | Reload |
 |------|---------------|--------|
