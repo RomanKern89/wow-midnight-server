@@ -35,12 +35,45 @@ anyone else's copy.
 3. Note the install path, e.g. `C:\Program Files (x86)\World of Warcraft\_retail_`.
 
 **Caveat:** the app always installs the *current live* build. If retail has moved
-past 68275, this gives you a client newer than your database and login will fail
-with a version mismatch. Use Option B when you need a specific build.
+past the build your server expects, this gives you a client newer than your
+database and login fails with a version mismatch.
 
 ---
 
-## Option B — Battle.Net-Installer (pin an exact build)
+## Read this before you download 100 GB
+
+**Nothing can install an old build for you.** Not the Battle.net app, and not
+Battle.Net-Installer below — it drives Blizzard's Agent, which only ever fetches
+whatever is live right now. There is no argument for a build id or a buildconfig
+hash, and Blizzard does not serve arbitrary past builds.
+
+Check what is live *before* downloading:
+
+```powershell
+(Invoke-WebRequest 'http://us.patch.battle.net:1119/wow/versions' -UseBasicParsing).Content
+```
+
+The `VersionsName` column on the `us` row is the build you will get.
+`scripts/setup-client.ps1` runs this check for you and refuses to start a
+download that would produce the wrong build.
+
+**If the live build is newer than your server's**, there are two real options:
+
+1. **Move the server to the live build.** Update TrinityCore, re-extract the game
+   data from the new client, and set the realm's gamebuild accordingly. This is
+   the sustainable answer — retail moves every few weeks, and a server pinned to
+   a build nobody can download any more is a dead end for new players.
+2. **Keep an existing install of the old build** and stop the Battle.net app from
+   updating it. Point it at your server with
+   `scripts/setup-client.ps1 -SkipInstall`.
+
+> This repository documents build **12.0.7.68275**, which was the live build on
+> 2026-07-05. Retail has moved on since. Someone downloading today gets a newer
+> client, so expect to take option 1.
+
+---
+
+## Option B — Battle.Net-Installer (choose product, locale and directory)
 
 [**Battle.Net-Installer**](https://github.com/barncastle/Battle.Net-Installer)
 drives Blizzard's own Battle.net Agent to install, update or repair a product
@@ -160,7 +193,7 @@ See [SETUP.md](SETUP.md) for the extractor flags.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Login screen build ≠ 68275 | Client auto-updated, or installed live | Re-pin with Option B; stop the Battle.net app managing that folder |
+| Login screen build ≠ the server's | Client auto-updated, or was installed at the live build | It cannot be downgraded — move the server to the live build, or restore an install of the old one and stop the Battle.net app managing that folder |
 | Extractors find no data | Run from the wrong directory | Run them **inside** the client folder, next to `WoW.exe` |
 | CASC download is enormous | The cache is kept alongside the data | The CASC cache can be deleted after extraction; it re-downloads on demand |
 | "Version mismatch" at login | Client build ≠ world DB build | Align the two — see above |

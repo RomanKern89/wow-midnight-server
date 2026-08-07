@@ -1,13 +1,21 @@
 <#
 .SYNOPSIS
-    Install a World of Warcraft retail client at a specific build and point it at
-    your private server.
+    Install a World of Warcraft retail client and point it at your private
+    server.
 
 .DESCRIPTION
     Does the three things that otherwise go wrong by hand:
-      1. installs the client at the exact build your server expects,
-      2. verifies the build actually matches,
+      1. installs a retail client,
+      2. compares the build with the one your server expects BEFORE the
+         download, so you are not told after ~100 GB that it is the wrong one,
       3. writes the one Config.wtf line that redirects login to your server.
+
+    IT CANNOT INSTALL AN OLD BUILD. Battle.Net-Installer drives Blizzard's
+    Agent, and the Agent only ever fetches whatever is live right now - there is
+    no argument for a specific build, and Blizzard does not serve arbitrary past
+    builds. If your server expects an older build than Blizzard is shipping
+    today, your real options are to move the server to the current build, or to
+    keep an existing install of the old one and re-run this with -SkipInstall.
 
     The client is downloaded from Blizzard by Blizzard's own Battle.net Agent.
     This script does not, and cannot, give you a client you do not already have
@@ -28,7 +36,8 @@
     Asset language: enUS, ruRU, deDE, frFR, esES, ...
 
 .PARAMETER Build
-    Build the server expects. Default 12.0.7.68275.
+    The build your server expects. Default 12.0.7.68275. This is used to CHECK
+    what you get, not to select it - see the warning above.
 
 .PARAMETER Product
     TACT product code. Default 'wow' (retail).
@@ -91,6 +100,23 @@ function Ask ($prompt, $default) {
 function Pause-For ($message) {
     try { Read-Host $message | Out-Null }
     catch { Write-Host '    (no console - continuing)' -ForegroundColor DarkGray }
+}
+
+# What build is Blizzard shipping for this product right now? This is the build
+# an install will actually produce - the Agent has no way to fetch an older one.
+# Format: Region|BuildConfig|CDNConfig|KeyRing|BuildId|VersionsName|ProductConfig
+function Get-LiveBuild ($product, $region = 'us') {
+    try {
+        $r = Invoke-WebRequest -Uri "http://us.patch.battle.net:1119/$product/versions" `
+                               -UseBasicParsing -TimeoutSec 20
+        foreach ($line in ($r.Content -split "`r?`n")) {
+            if ($line -match "^$region\|") {
+                $f = $line -split '\|'
+                if ($f.Count -ge 6) { return $f[5].Trim() }
+            }
+        }
+    } catch { return $null }
+    return $null
 }
 
 # Look for a tool next to this script, in the install dir, or on PATH.
@@ -176,7 +202,44 @@ if (-not $SkipInstall) {
         }
     }
 
-    Step 3 "Installing '$Product' ($Locale) into $InstallDir"
+    # Check BEFORE the ~100 GB download, not after it.
+    Step 3 'Checking which build Blizzard is currently shipping'
+    $live = Get-LiveBuild $Product
+    if (-not $live) {
+        Warn 'Could not reach the Blizzard version endpoint - cannot tell what will be installed.'
+    } elseif ($live -eq $Build) {
+        Ok "Live build is $live - matches what this server expects"
+    } else {
+        Write-Host @"
+
+    !!  THE INSTALL WILL NOT GIVE YOU THE BUILD YOU ASKED FOR  !!
+
+        this server expects : $Build
+        Blizzard ships now  : $live
+
+    Battle.Net-Installer drives Blizzard's Agent, which only ever installs the
+    CURRENT live build. There is no flag for an older one, and Blizzard does not
+    serve arbitrary past builds. Downloading now gives you $live, and the
+    client will be rejected at login with a version mismatch.
+
+    Your options:
+      1. Update the SERVER to $live - the sustainable answer. Update
+         TrinityCore, re-extract the game data from the new client, and set the
+         realm's gamebuild to $live.
+      2. If you already own a $Build install, keep it and stop the Battle.net
+         app from updating it. Re-run this script with -SkipInstall to point
+         that existing client at your server.
+      3. Run this anyway with -Build $live if you are building the server
+         around the current client.
+
+"@ -ForegroundColor Red
+        if ((Ask '    Download anyway? (y/n)' 'n') -notmatch '^[Yy]') {
+            Write-Host '    Stopped before downloading.' -ForegroundColor Yellow
+            exit 1
+        }
+    }
+
+    Step 4 "Installing '$Product' ($Locale) into $InstallDir"
     Write-Host '    This downloads ~100 GB from Blizzard and takes a long time.' -ForegroundColor DarkGray
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
@@ -197,7 +260,7 @@ agent log. Error 2310 specifically means you need the fork:
 }
 
 # --------------------------------------------------------- 2. verify build
-Step 4 'Verifying the build'
+Step 5 'Verifying the build'
 $buildInfo = Join-Path $InstallDir '.build.info'
 if (-not (Test-Path -LiteralPath $buildInfo)) {
     Fail ".build.info not found in $InstallDir - that directory is not a client install root."
@@ -214,7 +277,7 @@ if ($found) {
 }
 
 # ------------------------------------------------------------- 3. Arctium
-Step 5 'Checking for the Arctium launcher'
+Step 6 'Checking for the Arctium launcher'
 $arctiumPath = Join-Path $InstallDir 'Arctium Game Launcher.exe'
 if (Test-Path -LiteralPath $arctiumPath) {
     Ok 'Arctium Game Launcher.exe is in the install root'
@@ -242,7 +305,7 @@ if (Test-Path -LiteralPath $arctiumPath) {
 }
 
 # --------------------------------------------------------- 4. set the portal
-Step 6 "Pointing the client at $ServerIP"
+Step 7 "Pointing the client at $ServerIP"
 $wtfDir     = Join-Path $InstallDir '_retail_\WTF'
 $configPath = Join-Path $wtfDir 'Config.wtf'
 New-Item -ItemType Directory -Force -Path $wtfDir | Out-Null
