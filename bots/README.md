@@ -130,18 +130,32 @@ The bot scripts are built and run continuously on a live server (Ubuntu 24.04,
 gcc 13.3.0, TrinityCore `c9e3fd8df5cb`, `SCRIPTS=dynamic`) — that is where every
 measurement above comes from.
 
-The Docker image **was** built from a clean checkout, and the first attempt
-failed:
+**Verified end to end in Docker.** `docker compose build` produces an image with
+the bots and the core patch in it; the stack comes up; the world initialises in
+about 90 seconds; the scripts register and load their six tables (quest hubs,
+population spots, repairers, auctioneers, workbenches, turn-in locations); and
+`Pbot.WorldPopulation = 10` brings ten bots into the world at startup, which then
+gather, learn recipes and break off fights they are losing.
 
-```
-pbot_mgr.cpp:349: error: 'class Player' has no member named 'InitializeEmptySocial'
-```
+Getting there took three attempts, and each failure was invisible from the source
+alone:
 
-That is how the core patch above was discovered. This README had claimed the
-bots patch nothing — written from how they were designed rather than from a
-build, while the live server's own version string had said `c9e3fd8df5cb+` for
-months, the `+` meaning a modified tree. Nothing short of building it would have
-found that.
+1. **The build failed.** `pbot_mgr.cpp:349: error: 'class Player' has no member
+   named 'InitializeEmptySocial'` — the core patch above, which had lived only in
+   the live server's working tree. This README used to claim the bots patch
+   nothing; the server's own version string had been printing `c9e3fd8df5cb+` for
+   months, where the `+` means exactly this.
+2. **The scripts compiled and never registered.** TrinityCore ships an empty
+   `AddCustomScripts()`; see `custom_script_loader.cpp` above.
+3. **The bots ran and said nothing.** `Logger.root = 5` means errors only, and
+   TrinityCore's levels run the opposite way to intuition, so every line they
+   wrote was discarded — a server that looked exactly like one with no bots in
+   it. Fixed by `Logger.scripts.bots = 3,Console` in the config template.
+
+**And one limit, measured the hard way:** twenty gigabytes is not enough for the
+full retail world *plus* a scattered population. The host stopped answering SSH
+while still replying to pings — starved rather than crashed, which reads as a
+hang. See the RAM row in `docker/INSTALL.md`.
 
 ---
 
