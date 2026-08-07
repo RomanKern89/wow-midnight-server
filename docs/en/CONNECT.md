@@ -78,8 +78,9 @@ SOAP_USER='1#1' SOAP_PASS='...' scripts/create-account.sh -e you@example.com -p 
 
 The client build **must** equal the server's world-DB build. A mismatched build
 fails at login every time. **[CLIENT.md](CLIENT.md)** covers obtaining the client
-and pinning it to this build — or just run `scripts/setup-client.ps1`, which
-installs it, checks the build and sets the portal in one go.
+and what to do when the live build no longer matches your server — or just run
+`scripts/setup-client.ps1`, which checks the build before downloading and sets
+the portal.
 
 ### 2. Add the Arctium launcher
 

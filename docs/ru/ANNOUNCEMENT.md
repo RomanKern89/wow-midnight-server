@@ -89,7 +89,8 @@
 ### С чего начать
 
 - **[Как получить клиент](https://github.com/RomanKern89/wow-midnight-server/blob/main/docs/ru/CLIENT.md)** — скачиваете у Blizzard сами,
-  загрузка бесплатная, в гайде показано как зафиксировать нужный билд.
+  загрузка бесплатная. Учтите: вы всегда получаете тот билд, который живой
+  прямо сейчас — поставить старый не может ничто, поэтому проверьте заранее.
 - **[Настройка сервера](https://github.com/RomanKern89/wow-midnight-server/blob/main/docs/ru/SETUP.md)** — собрать TrinityCore, извлечь данные.
 - **[Подключение](https://github.com/RomanKern89/wow-midnight-server/blob/main/docs/ru/CONNECT.md)** — Arctium плюс одна строка в `Config.wtf`.
 - **[Фиксы](https://github.com/RomanKern89/wow-midnight-server/blob/main/docs/ru/FIXES.md)** — что каждый чинит и почему.
