@@ -5,3 +5,6 @@
 *.cpp    text eol=lf
 *.h      text eol=lf
 *.sql    text eol=lf
+*.py     text eol=lf
+# PowerShell is Windows-only; keep it CRLF so Notepad and the ISE behave.
+*.ps1    text eol=crlf

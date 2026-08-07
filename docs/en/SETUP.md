@@ -91,11 +91,30 @@ no restart). GameObject / graveyard / raid-binding changes need a restart. See
 
 ## 8. Create an account
 
-In the worldserver console:
+A retail client logs in through Battle.net, so the account has to be a
+**Battle.net account** and its name has to be an **email address**. In the
+worldserver console:
 
 ```
-account create <name> <password>
-account set gmlevel <name> 3 -1
+bnetaccount create you@example.com <password>
+bnetaccount listgameaccounts you@example.com
+account set gmlevel <id>#1 3 -1
 ```
+
+`bnetaccount create` also creates the linked game account, named `<id>#1`; the GM
+level goes on that name, not on the email.
+
+**`account create` will not work for logging in** — it makes a game account with
+no Battle.net link. TrinityCore refuses any name containing `@` there and points
+you at the bnet commands.
+
+Or run the script, which does all three steps and reports the result:
+
+```bash
+SOAP_USER='1#1' SOAP_PASS='...' scripts/create-account.sh -e you@example.com -p <password> -g 3
+```
+
+It talks to the running server over SOAP, so `worldserver.conf` needs
+`SOAP.Enabled = 1` (it listens on loopback, so run it on the server host).
 
 Continue to **[CONNECT.md](CONNECT.md)** to patch and point your client.

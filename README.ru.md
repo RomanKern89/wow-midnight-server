@@ -101,6 +101,20 @@ _Скриншотов пока нет — вклад приветствуетс�
 4. **Применить community-фиксы** из [`sql/`](sql/). → [sql/README.md](sql/README.md)
 5. **Подключи** клиент. → [docs/ru/CONNECT.md](docs/ru/CONNECT.md)
 
+### Короткий путь (два скрипта)
+
+```powershell
+# на ТВОЁМ ПК — ставит клиент нужного билда и направляет его на сервер
+.\scripts\setup-client.ps1 -InstallDir C:\Games\WoW -ServerIP 192.168.1.50
+```
+```bash
+# на СЕРВЕРЕ — создаёт логин, которым реально можно войти, с правами GM
+SOAP_USER='1#1' SOAP_PASS='...' scripts/create-account.sh -e you@example.com -p secret -g 3
+```
+Имя аккаунта — **почта**: retail-клиент входит через Battle.net, поэтому
+`account create` создаёт то, чем войти нельзя. См.
+[CONNECT.md](docs/ru/CONNECT.md).
+
 > **Где взять клиент?** У Blizzard, бесплатно, самостоятельно — см.
 > [CLIENT.md](docs/ru/CLIENT.md). Пожалуйста, не просите и не выкладывайте
 > ссылки на скачивание клиента: это нарушение авторских прав, сторонние сборки —
@@ -131,7 +145,11 @@ _Скриншотов пока нет — вклад приветствуетс�
 │   └── core-patch/               Единственный патч ядра, девять строк
 ├── docker/                       Развёртывание в compose (руководство — INSTALL.md)
 ├── sql/                          Community-фиксы (обратимые, на безопасных ID-бандах)
-└── scripts/                      vmssh.py (креды из env) · apply_fixes.sh
+└── scripts/
+    ├── setup-client.ps1          Установка клиента нужного билда + настройка на твой сервер
+    ├── create-account.sh         Создание Battle.net-аккаунта (+ уровень GM) на живом сервере
+    ├── apply_fixes.sh            Применение пака SQL-фиксов
+    └── vmssh.py                  SSH-хелпер (креды из переменных окружения)
 ```
 
 ---

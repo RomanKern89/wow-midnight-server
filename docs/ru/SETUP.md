@@ -92,11 +92,29 @@ DB_USER=trinity DB_PASS=trinity DB_NAME=world ./apply_fixes.sh
 
 ## 8. Создание аккаунта
 
-В консоли worldserver:
+Retail-клиент входит через Battle.net, поэтому аккаунт обязан быть
+**Battle.net-аккаунтом**, а его имя — **адресом почты**. В консоли worldserver:
 
 ```
-account create <имя> <пароль>
-account set gmlevel <имя> 3 -1
+bnetaccount create you@example.com <пароль>
+bnetaccount listgameaccounts you@example.com
+account set gmlevel <id>#1 3 -1
 ```
+
+`bnetaccount create` заодно создаёт привязанный игровой аккаунт с именем `<id>#1`;
+уровень GM выдаётся именно на него, а не на почту.
+
+**`account create` для входа не подойдёт** — она делает игровой аккаунт без
+привязки к Battle.net. TrinityCore отказывает там любому имени с `@` и отправляет
+к bnet-командам.
+
+Либо запусти скрипт — он делает все три шага и показывает результат:
+
+```bash
+SOAP_USER='1#1' SOAP_PASS='...' scripts/create-account.sh -e you@example.com -p <пароль> -g 3
+```
+
+Он общается с работающим сервером по SOAP, поэтому в `worldserver.conf` нужен
+`SOAP.Enabled = 1` (слушает на loopback — запускать на хосте сервера).
 
 Дальше — **[CONNECT.md](CONNECT.md)** для патча и настройки клиента.

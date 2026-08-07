@@ -44,11 +44,30 @@ WHERE id = 1;
 Make sure these ports are open to the client: **8081** (REST login), **1119**
 (bnet), **8085** (world).
 
-Create an account (worldserver console):
+Create an account (worldserver console). **It must be a Battle.net account, and
+the name must be an email address** — a retail client logs in through Battle.net:
 
 ```
-account create myname mypassword
-account set gmlevel myname 3 -1
+bnetaccount create you@example.com yourpassword
+```
+
+That prints the linked game account it created for you, named `<id>#1`. Grant GM
+rights on *that* name, not on the email:
+
+```
+bnetaccount listgameaccounts you@example.com
+account set gmlevel 1#1 3 -1
+```
+
+> **Do not use `account create` here.** It makes a plain game account with no
+> Battle.net link, which the client cannot log in with. TrinityCore is explicit
+> about it: `account create` refuses any name containing `@` and tells you to use
+> the bnet commands, while `bnetaccount create` requires one.
+
+Or let a script do all of it, including the GM level:
+
+```bash
+SOAP_USER='1#1' SOAP_PASS='...' scripts/create-account.sh -e you@example.com -p yourpassword -g 3
 ```
 
 ---
@@ -57,9 +76,10 @@ account set gmlevel myname 3 -1
 
 ### 1. Match the build — 68275
 
-The client build **must** equal the server's world-DB build. Use **BNetInstaller**
-to fetch/keep build **12.0.7.68275**, or a full retail install pinned to it. A
-mismatched build will fail at login every time.
+The client build **must** equal the server's world-DB build. A mismatched build
+fails at login every time. **[CLIENT.md](CLIENT.md)** covers obtaining the client
+and pinning it to this build — or just run `scripts/setup-client.ps1`, which
+installs it, checks the build and sets the portal in one go.
 
 ### 2. Add the Arctium launcher
 
@@ -109,7 +129,8 @@ Battle.net login screen pointed at your server.
 
 ### 5. Log in
 
-1. Enter the **account name + password** you created with `account create`.
+1. Enter the **email address + password** of the Battle.net account you created
+   with `bnetaccount create`.
 2. Pick the realm.
 3. You're in.
 
