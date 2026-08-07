@@ -68,7 +68,12 @@ and — the root of all of it — never being allowed to look at a gathering nod
 
 ## Commands
 
-All GM-gated (`RBAC_PERM_COMMAND_SERVER`), all usable from the server console.
+Full manual: **[COMMANDS.md](COMMANDS.md)** — every command, every argument,
+the config switches, the chat vocabulary companions understand, and what to look
+at when nothing seems to happen.
+
+The short version, all GM-gated (`RBAC_PERM_COMMAND_SERVER`) and all usable from
+the server console:
 
 ```
 .pbot world populate <count>     spread a population across the world

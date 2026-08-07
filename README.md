@@ -117,6 +117,7 @@ Fix details: **[docs/en/FIXES.md](docs/en/FIXES.md)**
 │   └── ru/  SETUP · CONNECT · FEATURES · FIXES
 ├── bots/                         Companion bot system (72 scripts + core patch)
 │   ├── README.md                 What they do, measured — and what they do badly
+│   ├── COMMANDS.md / .ru.md      Every command and config switch, explained
 │   ├── src/                      Drop-in for src/server/scripts/Custom/Bots/
 │   ├── custom_script_loader.cpp  Replaces TC's empty stub, or nothing registers
 │   └── core-patch/               The one nine-line patch the bots need
