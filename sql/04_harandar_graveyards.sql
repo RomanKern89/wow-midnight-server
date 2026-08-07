@@ -1,3 +1,24 @@
+-- =====================================================================
+-- 04_harandar_graveyards.sql
+-- Fix: Harandar (map 2694, the newest zone) has no graveyards, so a player
+--      who dies there cannot resurrect properly — there is no Spirit Healer
+--      to release to and no graveyard linked to the zone's areas.
+--
+-- Adds 12 `world_safe_locs`, 12 `graveyard_zone` links and 12 Spirit Healer
+-- spawns (creature 6491), one per area of the zone.
+--
+-- Custom ID bands: creature guids 11000773-11000784, world_safe_locs /
+-- graveyard_zone IDs 100127-100138. Each block deletes its own band first,
+-- so the file is safe to re-run.
+--
+-- Requires a worldserver restart.
+--
+-- Revert:
+--   DELETE FROM `creature`        WHERE `guid` BETWEEN 11000773 AND 11000784;
+--   DELETE FROM `graveyard_zone`  WHERE `ID`   BETWEEN 100127   AND 100138;
+--   DELETE FROM `world_safe_locs` WHERE `ID`   BETWEEN 100127   AND 100138;
+-- =====================================================================
+
 SET @CGUID := 11000773;
 
 SET @GGUID := 100127;
