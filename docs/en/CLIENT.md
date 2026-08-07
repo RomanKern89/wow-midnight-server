@@ -40,30 +40,40 @@ with a version mismatch. Use Option B when you need a specific build.
 
 ---
 
-## Option B — a CDN installer tool (pin an exact build)
+## Option B — Battle.Net-Installer (pin an exact build)
 
-Community tools exist that download product files **directly from Blizzard's own
-CDN** using Blizzard's public product manifests. They fetch the same bits the
-Battle.net app would; the difference is that you choose the product and build
-instead of always receiving the newest one. **BNetInstaller** is the one this
-project's reference server was built with.
+[**Battle.Net-Installer**](https://github.com/barncastle/Battle.Net-Installer)
+drives Blizzard's own Battle.net Agent to install, update or repair a product
+into a directory you choose. It is not a downloader that works around Blizzard —
+it uses Blizzard's Agent and CDN, which is why it needs the Battle.net app
+installed and recently logged in.
 
-These tools are maintained by individuals and move between forks, so this guide
-deliberately does not hard-code a repository link that would rot. Search GitHub
-for `BNetInstaller` and prefer an actively maintained fork; check that the
-product you need is supported before relying on it, since support for a new
-expansion often lands in a fork or an open pull request before the main branch.
+Requirements: **Windows**, **.NET 8.0**, Battle.net installed and authenticated.
+Only products marked *Active* in the TACT database will install.
 
-The interface is typically a product code plus a target directory:
-
-```bash
-BNetInstaller.exe --prod wow --dir "C:\Games\WoW_Midnight"
+```
+BNetInstaller.exe --prod wow --lang enUS --dir "C:\Games\WoW_Midnight" --uid wow --verbose false
 ```
 
-Common flags are `--prod` (product code — `wow` is retail, and the `Product`
-field in `.build.info` of any existing install shows you the exact code),
-`--dir` (install directory) and `--lang` (locale, e.g. `enUS`, `ruRU`). Confirm
-the actual flags against the tool you downloaded — they differ between forks.
+| Flag | Meaning |
+|---|---|
+| `--prod` | TACT product code. `wow` is retail — the `Product` field in `.build.info` of any existing install confirms it. |
+| `--lang` | Asset language, e.g. `enUS`, `ruRU`. Availability varies per product. |
+| `--dir` | Install directory. |
+| `--uid` | Agent UID, when it differs from the product code. |
+| `--repair` | Repair instead of install/update. |
+
+### Three things that will waste your evening
+
+1. **Close the Battle.net app first.** It fights the Agent for the same install.
+2. **Pass `--verbose false`.** Verbose progress reporting reads the cursor
+   position and crashes when there is no interactive desktop session.
+3. **If you hit Agent error 2310**, the upstream release is the problem, not you.
+   That failure comes from a missing `phoenix-agent/1.0` User-Agent, fixed in
+   [this fork](https://github.com/xCortlandx/Battle.Net-Installer) (pull request
+   #27). The reference client for this project was built from that fork after the
+   upstream v2.1 release stopped working. Errors surface as bare numeric codes —
+   the readable diagnostics are in the Battle.net **agent log**.
 
 > If you only need the client to *extract server data* rather than to play, you
 > can skip this entirely: the TrinityCore extractors read Blizzard's CASC storage
