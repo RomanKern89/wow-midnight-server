@@ -1,0 +1,7 @@
+# These are executed on a Linux server. A shell script checked out with CRLF
+# fails with "bad interpreter: /usr/bin/env bash^M", and CRLF inside an SQL file
+# can end up in the data. Keep them LF regardless of the checkout host.
+*.sh     text eol=lf
+*.sql    text eol=lf
+*.py     text eol=lf
+*.patch  -text
