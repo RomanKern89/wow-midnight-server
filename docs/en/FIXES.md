@@ -72,7 +72,58 @@ death/resurrect works there. Cherry-picked as a self-contained additive file.
 
 ---
 
+## 05 — Holidays drifted off the real calendar
+
+**File:** `sql/05_world_events_realign.sql`
+
+**Symptom:** by 2026 the yearly holidays fire 2-4 days early and the Darkmoon
+Faire is about two weeks out of step.
+
+**Root cause:** TrinityCore stores a holiday as an anchor date plus a fixed
+`occurence` in **minutes**. A stock TDB anchors these in 2022-2023, and 525600
+minutes is 365 days flat — no leap quarter — so even fixed-date holidays slide
+roughly a day every four years. Worse, anything the real calendar defines by
+*rule* (Darkmoon Faire is the first Sunday of the month, Noblegarden follows
+Easter, the Lunar Festival follows the lunar new year) drifts away from that rule
+entirely.
+
+**Fix:** re-anchor each holiday to its next genuine occurrence, so later years
+land correctly too. The file backs the table up before touching it. **Needs a
+restart** — `game_event` is read at startup.
+
+**Note when checking your work:** an event is active when
+`MOD(minutes since start, occurence) < length` — *not* when "now" falls between
+`start_time` and `end_time`. Those two columns bound the whole repeating series,
+not one occurrence.
+
+---
+
+## 06 — Stray spawns (NPCs standing where they don't belong)
+
+**File:** `sql/06_remove_stray_spawns.sql`
+
+**Symptom:** raid bosses standing in starter zones, event props at the Stormwind
+gates with no event attached, and Blizzard's own QA test creatures loose in the
+world.
+
+**Root cause:** an artifact of sniffed data — a client saw a creature somewhere
+during a scripted moment, and the capture recorded it as a permanent resident.
+
+**Why it matters:** a level-90 boss at the Stormwind gates is sudden death for
+anything levelling past it. The companion bots in this repo were dying to exactly
+that.
+
+**Fix:** removes 30 such spawns. The file backs up every row it deletes first, so
+the revert is a single INSERT. **Needs a restart.**
+
+**How they were identified:** these legacy entries often 404 on external
+databases because they are not in live retail data at all. The company an NPC
+keeps is the more reliable signal — the neighbours around a spawn identify its
+true home.
+
+---
+
 ## Applying & reverting
 
-Apply all: `scripts/apply_fixes.sh`. Each SQL file includes a revert block in
-comments. Always back up your `world` DB first.
+Apply all: `scripts/apply_fixes.sh`. Every file is safe to run twice and ends
+with a revert block in comments. Always back up your `world` DB first.

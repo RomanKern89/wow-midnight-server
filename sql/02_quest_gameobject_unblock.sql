@@ -1,6 +1,36 @@
--- quest_fix_go.sql [STAGED, NOT APPLIED] tag: QUESTLINK_GOFIX_20260708
--- gameobject_template: FULL proven column layout (matches applied missing_templates.sql); type=10 GOOBER; Data*=0; name/displayId authentic (Wowhead).
--- gameobject: FULL proven column layout (matches applied missing_go_spawns.sql). pos_x/y = nether tooltip zone%%->world via UiMapAssignment(12.0.7.68275); pos_z+orientation copied from nearest existing creature spawn same map; spawnDifficulties/phase/terrainSwapMap/rotation copied from nearest existing gameobject same map (fallback: creature spawnDifficulties + identity rotation + phase 0 + terrainSwap -1). guid band 8500000+. ADDITIVE ONLY. Needs worldserver restart.
+-- =====================================================================
+-- 02_quest_gameobject_unblock.sql
+-- Fix: ~10 quests cannot be completed because the GameObject the objective
+--      points at does not exist in the world database at all — the quest is
+--      offered, the objective never ticks, and the player has nothing to click.
+--
+-- Adds 28 `gameobject_template` rows and 89 `gameobject` spawns.
+--
+-- Data provenance:
+--   * template `name` / `displayId` are the authentic values for build
+--     12.0.7.68275.
+--   * spawn X/Y come from the quest-objective map coordinates converted to
+--     world space via UiMapAssignment for that build.
+--   * spawn Z + orientation are copied from the nearest existing creature
+--     spawn on the same map; spawnDifficulties / phase / terrainSwapMap /
+--     rotation from the nearest existing gameobject on the same map
+--     (fallback: identity rotation, phase 0, terrainSwapMap -1).
+--     Z is therefore an estimate — an object may sit slightly high or low.
+--
+-- ADDITIVE ONLY. Templates use INSERT IGNORE, so a real Blizzard row at the
+-- same entry always wins. Spawns live on the custom guid band 8500000-8500088
+-- and are cleared first, so the file is safe to re-run.
+--
+-- Requires a worldserver restart.
+--
+-- Revert:
+--   DELETE FROM `gameobject` WHERE `guid` BETWEEN 8500000 AND 8500088;
+--   -- the 28 templates are additive and harmless to keep; to drop them too:
+--   -- DELETE FROM `gameobject_template` WHERE `entry` IN (
+--   --   524793,531428,531431,531445,531480,531552,535948,556464,557576,565735,
+--   --   568428,570674,571007,573141,573390,584772,616568,616570,616575,617397,
+--   --   638871,639005,639438,639440,642695,649075,650224,651860);
+-- =====================================================================
 
 -- templates
 INSERT IGNORE INTO `gameobject_template` (`entry`,`type`,`displayId`,`name`,`IconName`,`castBarCaption`,`unk1`,`size`,`Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,`Data8`,`Data9`,`Data10`,`Data11`,`Data12`,`Data13`,`Data14`,`Data15`,`Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,`Data24`,`Data25`,`Data26`,`Data27`,`Data28`,`Data29`,`Data30`,`Data31`,`Data32`,`Data33`,`Data34`,`ContentTuningId`,`RequiredLevel`,`AIName`,`ScriptName`,`StringId`,`VerifiedBuild`) VALUES (524793,10,92225,'Nerubian Burrow','','','',1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,'','',NULL,68275);
@@ -32,7 +62,8 @@ INSERT IGNORE INTO `gameobject_template` (`entry`,`type`,`displayId`,`name`,`Ico
 INSERT IGNORE INTO `gameobject_template` (`entry`,`type`,`displayId`,`name`,`IconName`,`castBarCaption`,`unk1`,`size`,`Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,`Data8`,`Data9`,`Data10`,`Data11`,`Data12`,`Data13`,`Data14`,`Data15`,`Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,`Data24`,`Data25`,`Data26`,`Data27`,`Data28`,`Data29`,`Data30`,`Data31`,`Data32`,`Data33`,`Data34`,`ContentTuningId`,`RequiredLevel`,`AIName`,`ScriptName`,`StringId`,`VerifiedBuild`) VALUES (617397,10,25466,'Dark Chest of Forbidden Evils','','','',1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,'','',NULL,68275);
 INSERT IGNORE INTO `gameobject_template` (`entry`,`type`,`displayId`,`name`,`IconName`,`castBarCaption`,`unk1`,`size`,`Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,`Data8`,`Data9`,`Data10`,`Data11`,`Data12`,`Data13`,`Data14`,`Data15`,`Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,`Data24`,`Data25`,`Data26`,`Data27`,`Data28`,`Data29`,`Data30`,`Data31`,`Data32`,`Data33`,`Data34`,`ContentTuningId`,`RequiredLevel`,`AIName`,`ScriptName`,`StringId`,`VerifiedBuild`) VALUES (638871,10,100096,'Battle Plans','','','',1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,'','',NULL,68275);
 
--- spawns
+-- spawns (cleared first so the file can be re-run safely)
+DELETE FROM `gameobject` WHERE `guid` BETWEEN 8500000 AND 8500088;
 INSERT INTO `gameobject` (`guid`,`id`,`map`,`zoneId`,`areaId`,`spawnDifficulties`,`phaseUseFlags`,`PhaseId`,`PhaseGroup`,`terrainSwapMap`,`position_x`,`position_y`,`position_z`,`orientation`,`rotation0`,`rotation1`,`rotation2`,`rotation3`,`spawntimesecs`,`animprogress`,`state`,`ScriptName`,`StringId`,`VerifiedBuild`) VALUES (8500000,524793,2601,0,0,'0,1,2,3,4,6,7,8,9,10,12,14,15,16,17,18,23,24,33,38,147,167,205,208,220',0,0,0,-1,2457.9828,1019.8791,-70.2050,0.7707,0,0,0,1,300,255,1,'',NULL,68275);
 INSERT INTO `gameobject` (`guid`,`id`,`map`,`zoneId`,`areaId`,`spawnDifficulties`,`phaseUseFlags`,`PhaseId`,`PhaseGroup`,`terrainSwapMap`,`position_x`,`position_y`,`position_z`,`orientation`,`rotation0`,`rotation1`,`rotation2`,`rotation3`,`spawntimesecs`,`animprogress`,`state`,`ScriptName`,`StringId`,`VerifiedBuild`) VALUES (8500001,524793,2601,0,0,'0,1,2,3,4,6,7,8,9,10,12,14,15,16,17,18,23,24,33,38,147,167,205,208,220',0,0,0,-1,2467.2661,1012.9166,-70.2050,0.7707,0,0,0,1,300,255,1,'',NULL,68275);
 INSERT INTO `gameobject` (`guid`,`id`,`map`,`zoneId`,`areaId`,`spawnDifficulties`,`phaseUseFlags`,`PhaseId`,`PhaseGroup`,`terrainSwapMap`,`position_x`,`position_y`,`position_z`,`orientation`,`rotation0`,`rotation1`,`rotation2`,`rotation3`,`spawntimesecs`,`animprogress`,`state`,`ScriptName`,`StringId`,`VerifiedBuild`) VALUES (8500002,524793,2601,0,0,'0,1,2,3,4,6,7,8,9,10,12,14,15,16,17,18,23,24,33,38,147,167,205,208,220',0,0,0,-1,2536.8911,985.0666,-273.3180,0.7707,0,0,0,1,300,255,1,'',NULL,68275);

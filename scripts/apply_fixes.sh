@@ -16,10 +16,26 @@ DB_HOST="${DB_HOST:-127.0.0.1}"
 
 SQL_DIR="$(cd "$(dirname "$0")/../sql" && pwd)"
 
+# Password on the command line is visible in `ps`. Hand it to mysql through the
+# environment instead, which mysql reads directly.
+export MYSQL_PWD="$DB_PASS"
+
+failed=0
 for f in "$SQL_DIR"/*.sql; do
     echo ">> Applying $(basename "$f")"
-    mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$f"
+    # One failing file must not abort the rest, and must not go unnoticed.
+    if ! mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$f"; then
+        echo "!! FAILED: $(basename "$f")" >&2
+        failed=$((failed + 1))
+    fi
 done
+
+if [ "$failed" -ne 0 ]; then
+    echo >&2
+    echo "$failed file(s) failed — the database may be partially updated." >&2
+    echo "Fix the cause and re-run; every file in sql/ is safe to apply twice." >&2
+    exit 1
+fi
 
 echo "Done. Remember: 'reload quest_template' in the worldserver console for quest fixes;"
 echo "restart the worldserver for GameObject / graveyard / raid-binding changes."
