@@ -200,7 +200,8 @@ Four defects, each with its own backup:
 
 `creature_addon` rows naming a missing waypoint path (387), addon rows for a
 spawn that no longer exists (26), and formations whose leader or member is gone
-(237 + 355). A formation with a missing leader never forms up, so the members
+(237 rows have a missing leader and 355 a missing member — **386 distinct rows**,
+since some are missing both). A formation with a missing leader never forms up, so the members
 that should march behind it stand on their own spawn points instead.
 
 **Run after 07 and 09** — 09 removes broken spawns, which turns their addon rows
