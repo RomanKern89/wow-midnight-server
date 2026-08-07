@@ -16,14 +16,33 @@ twice in a row to a clean database.
 | `04_harandar_graveyards.sql` | 12 `world_safe_locs` + 12 `graveyard_zone` links + 12 Spirit Healers so the newest zone (Harandar, map 2694) is resurrect-able | worldserver restart |
 | `05_world_events_realign.sql` | Re-anchors every holiday to its real date. A default TDB is anchored in 2022-2023, and by 2026 the yearly events run 2-4 days early while the Darkmoon Faire is two weeks out | worldserver restart |
 | `06_remove_stray_spawns.sql` | Removes 30 stray spawns — raid bosses in starter zones, un-gated event props at the Stormwind gates, and Blizzard's own QA test creatures. Each backs itself up first | worldserver restart |
+| `07_npc_frozen_patrols.sql` | NPCs set to patrol with no route exist, but never move. About **a third of every waypoint mover** on a stock database (3,924 of 10,993 measured). Re-points them at idle or random movement | worldserver restart |
+| `08_npc_missing_models.sql` | Creatures spawned in the world that have no model, so the engine refuses to load them at all — mostly kill-credit and quest-objective NPCs, which silently breaks those objectives. 889 entries / 1,908 spawns measured | worldserver restart |
+| `09_npc_broken_spawns.sql` | Spawns with no `creature_template`, at the map origin, outside the map grid, or fallen through the world. Sunken ones are lifted to the local ground where neighbours allow it, deleted only when they cannot be placed | worldserver restart |
+| `10_npc_orphan_references.sql` | `creature_addon` rows pointing at a missing waypoint path or a deleted spawn, and formations whose leader or member no longer exists. Run after 07 and 09 | worldserver restart |
+
+### `sql/hotfixes/` — a different database
+
+| File | What it fixes | Apply to |
+|------|---------------|----------|
+| `hotfixes/01_map_difficulty_unlock.sql` | Eight maps where **nothing spawns at all** because the map has no legal difficulty for its spawns to live in — including Darkmaul Citadel, the Exile's Reach dungeon. Recovers 1,218 creature and 1,073 gameobject spawns | the **`hotfixes`** DB, then restart |
 
 ## Apply
 
 ```bash
+# every file in sql/ -> the world database
 DB_USER=trinity DB_PASS=trinity DB_NAME=world ../scripts/apply_fixes.sh
+
+# include sql/hotfixes/ as well (separate database, opt-in)
+DB_USER=trinity DB_PASS=trinity DB_NAME=world HOTFIXES_DB=hotfixes ../scripts/apply_fixes.sh
+
 # or a single file:
-mysql -u trinity -p world < 01_quest_earthen_intro_fix.sql
+mysql -u trinity -p world    < 01_quest_earthen_intro_fix.sql
+mysql -u trinity -p hotfixes < hotfixes/01_map_difficulty_unlock.sql
 ```
+
+Apply `07`-`10` in numerical order: `10` cleans up references that `09` turns
+into orphans when it removes a broken spawn.
 
 > These files use empty/custom ID bands (GameObject guids `8500000+`,
 > creature guids `11000773+`) so they will not collide with a standard

@@ -37,5 +37,24 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-echo "Done. Remember: 'reload quest_template' in the worldserver console for quest fixes;"
-echo "restart the worldserver for GameObject / graveyard / raid-binding changes."
+# sql/hotfixes/ belongs to a DIFFERENT database and is deliberately not part of
+# the loop above — applying it to `world` would do nothing useful. Opt in with
+# HOTFIXES_DB=hotfixes.
+if [ -n "${HOTFIXES_DB:-}" ]; then
+    for f in "$SQL_DIR"/hotfixes/*.sql; do
+        [ -e "$f" ] || continue
+        echo ">> Applying $(basename "$f") to '$HOTFIXES_DB'"
+        if ! mysql -h "$DB_HOST" -u "$DB_USER" "$HOTFIXES_DB" < "$f"; then
+            echo "!! FAILED: $(basename "$f")" >&2
+            exit 1
+        fi
+    done
+else
+    echo
+    echo "NOTE: sql/hotfixes/ was skipped — those files apply to the hotfixes"
+    echo "database, not world. To include them, re-run with HOTFIXES_DB=hotfixes."
+fi
+
+echo
+echo "Done. Remember: 'reload quest_template' in the worldserver console for the"
+echo "quest fixes; everything else needs a worldserver restart."
