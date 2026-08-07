@@ -36,9 +36,19 @@ kept honest and playable:
 ### Highlights
 - **Newest content, actually reachable** — allied-race and class intros, modern
   zones (Khaz Algar, Isle of Dorn, Harandar) resurrect-able and quest-able.
-- **Curated fix pack** — quest-chain repairs, quest-blocking GameObject spawns,
-  legacy-raid lockout/journal bindings, newest-zone graveyards. All additive,
-  all reversible, all on empty ID bands so they won't clash with a stock install.
+- **A third of the world's patrols were frozen — now they aren't.** On a stock
+  database **3,924 of 10,993** waypoint spawns never move: the spawn says
+  "patrol" but no route exists, so the movement generator never initialises.
+  [Fix 07](docs/en/FIXES.md) repairs every one of them.
+- **Eight maps that spawned nothing now spawn again** — including **Darkmaul
+  Citadel**, the Exile's Reach dungeon, which had never spawned a single NPC.
+  1,218 creatures and 1,073 gameobjects recovered.
+- **Curated fix pack** — 11 files: quest-chain repairs, quest-blocking GameObject
+  spawns, legacy-raid lockout/journal bindings, newest-zone graveyards, holidays
+  re-anchored to the real calendar, stray raid bosses removed from starter zones,
+  and the NPC repairs above. All additive, all reversible, all on empty ID bands.
+  Each one verified by breaking a real database, fixing it, re-running the fix,
+  and then reverting to confirm the original numbers come back exactly.
 - **Honest engineering** — where the engine hits a true ceiling (boss combat AI,
   brand-new phased-scene scripting), it's documented, not faked.
 
@@ -51,7 +61,7 @@ kept honest and playable:
 | Quests | **48,257** |
 | Quest objectives | 61,101 |
 | Quest starters / enders (NPC) | 27,694 / 34,524 |
-| Creature templates / spawns | 227,684 / **733,928** |
+| Creature templates / spawns | 227,684 / **733,485** |
 | GameObject templates / spawns | 89,967 / 197,724 |
 | Maps with spawns | **517** |
 | Loot table rows | 3,084,867 |
@@ -94,6 +104,9 @@ data and world DB (Blizzard's property — see [DISCLAIMER](DISCLAIMER.md)).
 
 ## Quick start (manual)
 
+0. **Get the client** — you download it from Blizzard yourself; it's a free
+   download and the guide pins the exact build so it can't drift out of sync
+   with your database. → **[docs/en/CLIENT.md](docs/en/CLIENT.md)**
 1. **Build the core** — TrinityCore master. → [docs/en/SETUP.md](docs/en/SETUP.md)
 2. **Extract game data** from your own retail client (maps/vmaps/mmaps/dbc).
 3. **Import the world DB** and run `worldserver` + `bnetserver`.
@@ -103,6 +116,11 @@ data and world DB (Blizzard's property — see [DISCLAIMER](DISCLAIMER.md)).
 Full walkthrough: **[docs/en/SETUP.md](docs/en/SETUP.md)** ·
 Features & content: **[docs/en/FEATURES.md](docs/en/FEATURES.md)** ·
 Fix details: **[docs/en/FIXES.md](docs/en/FIXES.md)**
+
+> **Where do I get the client?** From Blizzard, free, yourself — see
+> [CLIENT.md](docs/en/CLIENT.md). Please don't ask for or share a client
+> download; it's copyright infringement, third-party builds are unverifiable
+> binaries, and the official download takes one command.
 
 ---
 
@@ -114,9 +132,10 @@ Fix details: **[docs/en/FIXES.md](docs/en/FIXES.md)**
 ├── DISCLAIMER.md                 Legal — what we can and cannot ship
 ├── LICENSE                       MIT (original materials only)
 ├── docs/
-│   ├── en/  SETUP · CONNECT · FEATURES · FIXES
-│   └── ru/  SETUP · CONNECT · FEATURES · FIXES
+│   ├── en/  CLIENT · SETUP · CONNECT · FEATURES · FIXES · ANNOUNCEMENT
+│   └── ru/  CLIENT · SETUP · CONNECT · FEATURES · FIXES · ANNOUNCEMENT
 ├── sql/                          Community fix SQL (reversible, ID-band-safe)
+│   └── hotfixes/                 Applies to the hotfixes DB, not world
 └── scripts/                      vmssh.py (env-var creds) · apply_fixes.sh
 ```
 
