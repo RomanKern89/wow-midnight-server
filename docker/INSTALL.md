@@ -23,14 +23,21 @@ experience needed.
 | **Disk (free)** | 60 GB | 120 GB | Image ~7 GB + client data ~25 GB + databases ~2 GB + working room |
 | **Software** | Docker Engine + Docker Compose v2 | latest | Installed in step 2 |
 | **Network ports** | 1119, 8081, 8085 | + 3306 | Must be reachable by your game client |
-| **RAM (with companion bots)** | +2 GB | +4 GB | 60 bots across five continents. The cost is the maps and zones they keep loaded, not the bots — spreading them thin costs more than stacking them |
+| **RAM (with companion bots)** | **+6 GB** | **+8 GB** | Measured, not estimated: a 20 GB host running the full retail world was driven to a standstill by ten bots. The cost is the maps and zones they keep loaded, NOT the bots — ten scattered across ten zones cost more than sixty in one |
 
 > **Login‑server‑only mode** (no worldserver) runs comfortably in ~2 GB RAM and
 > ~10 GB disk — handy for just testing the stack.
 >
 > **Companion bots** are compiled into the image automatically (see
-> `bots/README.md`); they only run once you spawn them with
-> `.pbot world populate <count>`, so an idle server pays nothing for them.
+> `bots/README.md`) and stay switched off until you ask for them: set
+> `Pbot.WorldPopulation` in the worldserver config, or run
+> `.pbot world populate <count>` on the console. An idle server pays nothing.
+>
+> **Give them room.** On a 20 GB test host the full world alone settles around
+> 14 GB, and ten bots took the rest: the machine stopped answering SSH while
+> still passing pings — starved, not crashed, which looks like a hang and is
+> the least helpful failure there is. Run the full world with bots on **26 GB
+> or more**, or keep the population small and in few zones.
 
 You also need, on any Windows PC: a **retail World of Warcraft client, build
 12.0.7.68275**, to extract data from and to connect with.
