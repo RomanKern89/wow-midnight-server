@@ -18,6 +18,10 @@ questing with objective travel and turn-ins, grouping, chat, mounts, zone
 migration, and progress that survives restarts. Personality (greed, diligence,
 aggression, wanderlust) comes from the guid, so no two play alike.
 
+Full control manual: [`bots/COMMANDS.md`](bots/COMMANDS.md) /
+[`bots/COMMANDS.ru.md`](bots/COMMANDS.ru.md) — every command, argument, config
+switch and chat verb, with what each is for.
+
 **Diagnostics that are part of the product**, not scaffolding — `.pbot world
 time` reports where the population's day actually goes, `.pbot world craft`
 walks the chain from "has a profession" to "is standing at a workbench". Every

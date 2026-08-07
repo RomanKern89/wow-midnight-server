@@ -180,6 +180,7 @@ docker attach tc-worldserver          # Ctrl-P Ctrl-Q to leave it running
 > population, or keep it small and local.
 
 What they do, with measurements: [`bots/README.md`](../bots/README.md).
+Every command and switch: [`bots/COMMANDS.md`](../bots/COMMANDS.md).
 
 ---
 
@@ -464,6 +465,7 @@ docker attach tc-worldserver          # выйти, не останавлива�
 > держите его небольшим и в одной местности.
 
 Что они умеют, с числами: [`bots/README.ru.md`](../bots/README.ru.md).
+Все команды и настройки: [`bots/COMMANDS.ru.md`](../bots/COMMANDS.ru.md).
 
 ---
 
