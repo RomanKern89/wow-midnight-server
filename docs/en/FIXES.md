@@ -123,7 +123,132 @@ true home.
 
 ---
 
+## 07 — NPCs that should patrol but stand frozen
+
+**File:** `sql/07_npc_frozen_patrols.sql`
+
+**Symptom:** a guard or wandering mob never moves. Not a pathing problem — the
+creature never starts moving at all.
+
+**Root cause:** `creature.MovementType = 2` means "follow a waypoint path", and
+the path id comes from `creature_addon.PathId`. When the spawn has no addon row,
+or PathId is 0, or PathId names a `waypoint_path` that does not exist,
+`WaypointMovementGenerator::DoInitialize()` cannot load a path and returns false.
+The generator never initialises, so the creature stands still for as long as the
+grid is loaded, logging `couldn't load path for ...` each time.
+
+**Scale:** 3,924 of 10,993 waypoint spawns — about **a third of every patrolling
+NPC in the world**. The spawn row is the anomaly, not the template: 3,773 of them
+belong to a `creature_template` whose own MovementType is 0 (idle).
+
+**Fix:** make the spawn honest — `wander_distance > 0` becomes random movement in
+that radius, otherwise idle. This is the same mapping TrinityCore applies when it
+repairs other contradictory MovementType/wander_distance combinations at load.
+Real patrol routes cannot be recovered; the waypoint data was never there. **Needs
+a restart.**
+
+---
+
+## 08 — Creatures that cannot appear at all
+
+**File:** `sql/08_npc_missing_models.sql`
+
+**Symptom:** the log repeats `Creature (Entry: N) has no model defined ... can't
+load.` The creature does not exist in the world — it cannot be seen, targeted or
+killed.
+
+**Root cause:** a creature needs at least one `creature_template_model` row.
+889 spawned entries across 1,908 spawns had none.
+
+**Why it matters:** most are invisible utility NPCs — kill-credit counters and
+quest-objective bunnies. They are *meant* to be invisible, but they still have to
+exist: a quest objective that counts kills of a credit NPC can never complete if
+that NPC cannot spawn.
+
+**Fix:** give every spawned entry with no model the canonical invisible display
+`11686` — the model TrinityCore's own invisible stalkers use. Scope is limited to
+entries that are actually spawned. **Needs a restart.**
+
+---
+
+## 09 — Spawns that cannot exist, or are somewhere unreachable
+
+**File:** `sql/09_npc_broken_spawns.sql`
+
+Four defects, each with its own backup:
+
+* **no `creature_template`** — the engine skips them; a template cannot be
+  reconstructed from a spawn row, so they are removed (261).
+* **at the map origin (0,0,0)** — never a real placement (146). Some of these
+  entries are also vehicle passengers via `vehicle_template_accessory`; that
+  mechanism does not read the `creature` table, so the passenger is unaffected.
+* **outside the map grid** — a map is 64×64 cells of 533.33 yd, so every valid
+  coordinate is within ±17066.66 (2).
+* **fallen through the world (z ≤ −2000)** — these are **lifted, not deleted**,
+  to the average z of healthy spawns within 60 yards. `GetMapHeight()` searches
+  about 50 yards and snaps the creature to the ground, so a near-enough estimate
+  self-corrects. Only spawns with fewer than 3 neighbours to derive a height from
+  are removed (86).
+
+**Needs a restart.**
+
+---
+
+## 10 — References pointing at nothing
+
+**File:** `sql/10_npc_orphan_references.sql`
+
+`creature_addon` rows naming a missing waypoint path (387), addon rows for a
+spawn that no longer exists (26), and formations whose leader or member is gone
+(237 + 355). A formation with a missing leader never forms up, so the members
+that should march behind it stand on their own spawn points instead.
+
+**Run after 07 and 09** — 09 removes broken spawns, which turns their addon rows
+into orphans that this file then collects. **Needs a restart.**
+
+---
+
+## hotfixes/01 — Eight maps where nothing spawns at all
+
+**File:** `sql/hotfixes/01_map_difficulty_unlock.sql`
+**Applies to the `hotfixes` database, not `world`.**
+
+**Symptom:** eight maps are completely empty in game, and the log repeats
+`Table \`creature\` has creature (GUID: N) that is not spawned in any difficulty,
+skipped.` thousands of times.
+
+**Root cause:** `ObjectMgr::LoadCreatures` builds the set of legal difficulties
+for each map from `sMapDifficultyStore`, then keeps only the `spawnDifficulties`
+tokens that are in it. For these maps the intersection is empty — six are retired
+scenarios whose MapDifficulty records Blizzard removed from the client data, and
+two have a record for a difficulty that is not in the spawn strings. The spawn
+rows are fine; the map has no difficulty to spawn them into.
+
+**Fix:** add one MapDifficulty row per map with **DifficultyID 0**. DB2 stores are
+file-plus-database — `DB2Store::LoadFromDB` runs the loader twice, once for
+`VerifiedBuild > 0` and once for `<= 0` — so a custom row with VerifiedBuild 0 is
+merged into the store by design.
+
+**Do not use DifficultyID 1.** `Difficulty.db2` has no record 0, so
+`GetDefaultMapDifficulty()` filters these rows out and they cannot influence how
+an instance is created or scaled. A real difficulty *is* selectable and would
+override Blizzard's own tuning for the map.
+
+**Recovers:** 1,218 creature and 1,073 gameobject spawns, including **Darkmaul
+Citadel** — the Exile's Reach dungeon, which had never spawned a single NPC.
+Nothing is broadcast to game clients: those come from the separate `hotfix_data`
+table, which this file does not touch. **Needs a restart.**
+
+---
+
 ## Applying & reverting
 
-Apply all: `scripts/apply_fixes.sh`. Every file is safe to run twice and ends
-with a revert block in comments. Always back up your `world` DB first.
+Apply all: `scripts/apply_fixes.sh` (add `HOTFIXES_DB=hotfixes` to include
+`sql/hotfixes/`). Every file is safe to run twice — backups are created only if
+absent, so a second run cannot overwrite your original values — and every file
+ends with a revert block in comments. Always back up your `world` DB first.
+
+Every file in this document was verified by rolling a copy of a real database
+back to its broken state, applying the fix, confirming the defect count reaches
+zero, applying it a second time, and then running the documented revert to check
+the original numbers come back exactly.
