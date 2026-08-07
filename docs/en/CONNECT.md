@@ -12,9 +12,9 @@ in the client**.
 
 You do **not** edit game data. You only:
 
-1. Make sure the client is **exactly build 68275**.
-2. Drop the **Arctium launcher** next to `WoW.exe`.
-3. Add **one line** to `WTF/Config.wtf`: `SET portal "YOUR_SERVER_IP"`.
+1. Make sure the client is **exactly build 68275** — see **[CLIENT.md](CLIENT.md)**.
+2. Drop **`Arctium Game Launcher.exe`** in the install root (beside `_retail_`).
+3. Add **one line** to `_retail_\WTF\Config.wtf`: `SET portal "YOUR_SERVER_IP"`.
 4. Launch through **Arctium** (not the Blizzard app).
 
 That's it. Everything else is server-side.
@@ -63,8 +63,18 @@ mismatched build will fail at login every time.
 
 ### 2. Add the Arctium launcher
 
-Copy **`Arctium WoW Client Launcher.exe`** into the client folder, right next to
-`WoW.exe`. Arctium patches the running client **in memory** so it:
+Copy **`Arctium Game Launcher.exe`** into the **install root** — beside
+`_retail_`, `Data` and `.build.info`, **not** inside `_retail_` next to
+`Wow.exe`. This is the single most common setup mistake.
+
+```
+WoW_Midnight\
+├── Data\
+├── _retail_\Wow.exe
+└── Arctium Game Launcher.exe      <- here
+```
+
+Arctium patches the running client **in memory** so it:
 - accepts a **custom portal**, and
 - trusts the server's **self-signed login certificate**.
 
@@ -72,11 +82,15 @@ No game file is permanently modified.
 
 ### 3. Set the portal — one line in Config.wtf
 
-Open `WTF/Config.wtf` in the client folder and add (or edit):
+Open **`_retail_\WTF\Config.wtf`** (note the `_retail_` prefix — there is no
+`Config.wtf` at the install root) and add, or edit if it is already present:
 
 ```
 SET portal "YOUR_SERVER_IP"
 ```
+
+The file is a flat list of `SET key "value"` lines in no particular order. Add
+yours on its own line; leave the graphics settings alone.
 
 Optional, if you want to force locale / skip the launcher update check:
 

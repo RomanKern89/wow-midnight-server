@@ -59,7 +59,7 @@ kept honest and playable:
 | Quests | **48,257** |
 | Quest objectives | 61,101 |
 | Quest starters / enders (NPC) | 27,694 / 34,524 |
-| Creature templates / spawns | 227,684 / **733,928** |
+| Creature templates / spawns | 227,684 / **733,485** |
 | GameObject templates / spawns | 89,967 / 197,724 |
 | Maps with spawns | **517** |
 | Loot table rows | 3,084,867 |
@@ -92,11 +92,19 @@ _No screenshots yet — contributions welcome._
 
 ## Quick start
 
+0. **Get the client** — you download it from Blizzard yourself; it's a free
+   download and the guide pins the exact build so it can't drift out of sync
+   with your database. → **[docs/en/CLIENT.md](docs/en/CLIENT.md)**
 1. **Build the core** — TrinityCore master. → [docs/en/SETUP.md](docs/en/SETUP.md)
 2. **Extract game data** from your own retail client (maps/vmaps/mmaps/dbc).
 3. **Import the world DB** and run `worldserver` + `bnetserver`.
 4. **Apply the community fixes** in [`sql/`](sql/). → [sql/README.md](sql/README.md)
 5. **Connect** your client. → [docs/en/CONNECT.md](docs/en/CONNECT.md)
+
+> **Where do I get the client?** From Blizzard, free, yourself — see
+> [CLIENT.md](docs/en/CLIENT.md). Please don't ask for or share a client
+> download; it's copyright infringement, third-party builds are unverifiable
+> binaries, and the official download takes one command.
 
 Full walkthrough: **[docs/en/SETUP.md](docs/en/SETUP.md)** ·
 Features & content: **[docs/en/FEATURES.md](docs/en/FEATURES.md)** ·
@@ -113,8 +121,8 @@ Fix details: **[docs/en/FIXES.md](docs/en/FIXES.md)**
 ├── DISCLAIMER.md                 Legal — what we can and cannot ship
 ├── LICENSE                       MIT (original materials only)
 ├── docs/
-│   ├── en/  SETUP · CONNECT · FEATURES · FIXES
-│   └── ru/  SETUP · CONNECT · FEATURES · FIXES
+│   ├── en/  CLIENT · SETUP · CONNECT · FEATURES · FIXES · ANNOUNCEMENT
+│   └── ru/  CLIENT · SETUP · CONNECT · FEATURES · FIXES · ANNOUNCEMENT
 ├── bots/                         Companion bot system (72 scripts + core patch)
 │   ├── README.md                 What they do, measured — and what they do badly
 │   ├── COMMANDS.md / .ru.md      Every command and config switch, explained
