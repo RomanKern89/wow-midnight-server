@@ -5,3 +5,4 @@
 *.sql    text eol=lf
 *.py     text eol=lf
 *.patch  -text
+*.ps1    text eol=crlf

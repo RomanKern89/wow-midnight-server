@@ -117,6 +117,20 @@ Full walkthrough: **[docs/en/SETUP.md](docs/en/SETUP.md)** ·
 Features & content: **[docs/en/FEATURES.md](docs/en/FEATURES.md)** ·
 Fix details: **[docs/en/FIXES.md](docs/en/FIXES.md)**
 
+### The short way (two scripts)
+
+```powershell
+# on YOUR PC - installs the client at the right build and points it at the server
+.\scripts\setup-client.ps1 -InstallDir C:\Games\WoW -ServerIP 192.168.1.50
+```
+```bash
+# on the SERVER - creates a login you can actually use, with GM rights
+SOAP_USER='1#1' SOAP_PASS='...' scripts/create-account.sh -e you@example.com -p secret -g 3
+```
+The account name is an **email**: a retail client logs in through Battle.net, so
+`account create` produces something you cannot log in with. See
+[CONNECT.md](docs/en/CONNECT.md).
+
 > **Where do I get the client?** From Blizzard, free, yourself — see
 > [CLIENT.md](docs/en/CLIENT.md). Please don't ask for or share a client
 > download; it's copyright infringement, third-party builds are unverifiable
@@ -136,7 +150,11 @@ Fix details: **[docs/en/FIXES.md](docs/en/FIXES.md)**
 │   └── ru/  CLIENT · SETUP · CONNECT · FEATURES · FIXES · ANNOUNCEMENT
 ├── sql/                          Community fix SQL (reversible, ID-band-safe)
 │   └── hotfixes/                 Applies to the hotfixes DB, not world
-└── scripts/                      vmssh.py (env-var creds) · apply_fixes.sh
+└── scripts/
+    ├── setup-client.ps1          Install the client at the right build + point it at your server
+    ├── create-account.sh         Create a Battle.net account (+ GM level) on a running server
+    ├── apply_fixes.sh            Apply the SQL fix pack
+    └── vmssh.py                  SSH helper (credentials from env vars)
 ```
 
 ---
