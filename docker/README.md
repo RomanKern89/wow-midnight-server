@@ -67,9 +67,16 @@ Create a game account (worldserver has an interactive console):
 ```bash
 docker attach tc-worldserver          # detach with Ctrl-P Ctrl-Q
 # in the console:
-account create myname mypassword
-account set gmlevel myname 3 -1
+bnetaccount create you@example.com yourpassword
+bnetaccount listgameaccounts you@example.com
+account set gmlevel 1#1 3 -1
 ```
+
+> The account name must be an **email**: a retail client logs in through
+> Battle.net, so it has to be a Battle.net account. `account create` makes a
+> game account with no Battle.net link and you cannot log in with it.
+> `bnetaccount create` also creates the linked game account, named `<id>#1` -
+> that is the name the GM level goes on.
 
 Then point your client at the host — see
 [../docs/en/CONNECT.md](../docs/en/CONNECT.md).
@@ -155,9 +162,16 @@ docker compose logs -f worldserver    # первый старт строит к�
 ```bash
 docker attach tc-worldserver          # выйти: Ctrl-P Ctrl-Q
 # в консоли:
-account create myname mypassword
-account set gmlevel myname 3 -1
+bnetaccount create you@example.com yourpassword
+bnetaccount listgameaccounts you@example.com
+account set gmlevel 1#1 3 -1
 ```
+
+> The account name must be an **email**: a retail client logs in through
+> Battle.net, so it has to be a Battle.net account. `account create` makes a
+> game account with no Battle.net link and you cannot log in with it.
+> `bnetaccount create` also creates the linked game account, named `<id>#1` -
+> that is the name the GM level goes on.
 
 Затем направь клиент на хост — см.
 [../docs/ru/CONNECT.md](../docs/ru/CONNECT.md).
