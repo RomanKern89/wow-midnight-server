@@ -226,9 +226,16 @@ docker attach tc-worldserver
 Type (then press Enter):
 
 ```
-account create myname mypassword
-account set gmlevel myname 3 -1
+bnetaccount create you@example.com yourpassword
+bnetaccount listgameaccounts you@example.com
+account set gmlevel 1#1 3 -1
 ```
+
+> The account name must be an **email**: a retail client logs in through
+> Battle.net, so it has to be a Battle.net account. `account create` makes a
+> game account with no Battle.net link and you cannot log in with it.
+> `bnetaccount create` also creates the linked game account, named `<id>#1` -
+> that is the name the GM level goes on.
 
 Detach **without stopping** the server with: **Ctrl‑P** then **Ctrl‑Q**.
 
@@ -511,9 +518,16 @@ docker attach tc-worldserver
 Введи (с Enter):
 
 ```
-account create myname mypassword
-account set gmlevel myname 3 -1
+bnetaccount create you@example.com yourpassword
+bnetaccount listgameaccounts you@example.com
+account set gmlevel 1#1 3 -1
 ```
+
+> The account name must be an **email**: a retail client logs in through
+> Battle.net, so it has to be a Battle.net account. `account create` makes a
+> game account with no Battle.net link and you cannot log in with it.
+> `bnetaccount create` also creates the linked game account, named `<id>#1` -
+> that is the name the GM level goes on.
 
 Выйти **не останавливая** сервер: **Ctrl‑P**, затем **Ctrl‑Q**.
 
