@@ -83,7 +83,7 @@ d.text((64, 232), "honest, and community-fixed.", font=font(FL, 30), fill=MUTE)
 d.rounded_rectangle([64, 286, 210, 292], radius=3, fill=GOLD)
 # chips row
 x = 64
-for val, lab in [("48,257", "quests"), ("733,928", "spawns"),
+for val, lab in [("48,257", "quests"), ("733,485", "spawns"),
                  ("517", "maps"), ("26", "races · allied unlocked")]:
     x += chip(d, x, 306, lab, val, font(FB, 30), font(F, 17)) + 16
 img.save(os.path.join(OUT, "banner.png"))
@@ -98,7 +98,7 @@ d.text((50, 100), "Verified counts from the live world database — no fabricati
 cards = [
     ("48,257", "Quests", GOLD),
     ("61,101", "Quest objectives", CYAN),
-    ("733,928", "Creature spawns", GOLD),
+    ("733,485", "Creature spawns", GOLD),
     ("227,684", "Creature templates", CYAN),
     ("197,724", "GameObject spawns", GOLD),
     ("517", "Maps populated", CYAN),
