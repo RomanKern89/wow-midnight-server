@@ -28,9 +28,9 @@ local` → `up -d --build` from zero):
 
 | Input | Where | Notes |
 |-------|-------|-------|
-| Client-extracted data (dbc/maps/vmaps/mmaps) | `docker/data/` | From your own retail client (build 68275) |
-| `world.sql` dump @68275 | `docker/import/` | quests/spawns/loot (+ our fixes on top) |
-| `hotfixes.sql` dump @68275 | `docker/import/` | **required** — worldserver crash-loops without it |
+| Client-extracted data (dbc/maps/vmaps/mmaps) | `docker/data/` | From your own retail client (build 68974) |
+| `world.sql` dump @68974 | `docker/import/` | quests/spawns/loot (+ our fixes on top) |
+| `hotfixes.sql` dump @68974 | `docker/import/` | **required** — worldserver crash-loops without it |
 
 Everything else — schema creation, base auth/character import, **our fixes**,
 config rendering, a self-signed login cert — is automatic. See
@@ -123,9 +123,9 @@ local` → `up -d --build` от нуля):
 
 | Вход | Куда | Примечание |
 |------|------|-----------|
-| Данные из клиента (dbc/maps/vmaps/mmaps) | `docker/data/` | Из своего ретейл-клиента (билд 68275) |
-| Дамп `world.sql` @68275 | `docker/import/` | квесты/спавны/лут (+ наши фиксы сверху) |
-| Дамп `hotfixes.sql` @68275 | `docker/import/` | **обязателен** — без него worldserver крашлупит |
+| Данные из клиента (dbc/maps/vmaps/mmaps) | `docker/data/` | Из своего ретейл-клиента (билд 68974) |
+| Дамп `world.sql` @68974 | `docker/import/` | квесты/спавны/лут (+ наши фиксы сверху) |
+| Дамп `hotfixes.sql` @68974 | `docker/import/` | **обязателен** — без него worldserver крашлупит |
 
 Всё остальное — создание схем, импорт баз auth/characters, **наши фиксы**,
 рендер конфигов, самоподписанный логин-сертификат — автоматически. Как снять

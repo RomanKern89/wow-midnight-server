@@ -40,7 +40,7 @@ experience needed.
 > or more**, or keep the population small and in few zones.
 
 You also need, on any Windows PC: a **retail World of Warcraft client, build
-12.0.7.68275**, to extract data from and to connect with.
+12.0.7.68974**, to extract data from and to connect with.
 
 Time: ~1 hour (mostly the one‑time build + data copy).
 
@@ -90,7 +90,7 @@ install. If you already run a TrinityCore server, this is quick.
 
 ### 4a. Client‑extracted data → `data/`
 
-On the PC with your WoW client (build 68275), run the TrinityCore extractor
+On the PC with your WoW client (build 68974), run the TrinityCore extractor
 tools (`mapextractor`, `vmap4extractor` + `vmap4assembler`, `mmaps_generator`)
 inside the client folder. They produce these folders:
 
@@ -111,7 +111,7 @@ docker/data/
 ### 4b. Database dumps → `import/`
 
 From an existing TrinityCore server (or however you build your DBs), export the
-**world** and **hotfixes** databases (build 68275):
+**world** and **hotfixes** databases (build 68974):
 
 ```bash
 mysqldump --single-transaction --no-tablespaces --routines -u<user> -p world    > world.sql
@@ -243,7 +243,7 @@ Detach **without stopping** the server with: **Ctrl‑P** then **Ctrl‑Q**.
 
 ## 8. Connect your client
 
-On the Windows PC with the client (build 68275):
+On the Windows PC with the client (build 68974):
 
 1. Put the **Arctium** launcher next to `WoW.exe`.
 2. Edit `WoW/_retail_/WTF/Config.wtf`, add one line:
@@ -294,7 +294,7 @@ docker compose up -d --build
 | worldserver restarts, `OOMKilled=true` | Not enough RAM — give the machine **16–20 GB** |
 | Build fails / killed | Not enough RAM to compile (need 16 GB+), or lower `BUILD_JOBS` in `.env` |
 | Client stuck on "Connecting…" | `LOGIN_REST_EXTERNAL_ADDRESS` wrong, or port 8081 blocked; check `SET portal` |
-| "Version mismatch" at login | Client build must be exactly **68275** |
+| "Version mismatch" at login | Client build must be exactly **68974** |
 
 > The world DB import errors 1419 / 1227 that older setups hit are already
 > handled by this compose (mysql `log-bin-trust-function-creators=1`, and dumps
@@ -333,7 +333,7 @@ docker compose up -d --build
 > ~10 ГБ диска — удобно просто проверить стек.
 
 Также нужен на любом ПК с Windows: **ретейл‑клиент World of Warcraft билда
-12.0.7.68275** — из него извлекаешь данные и им же подключаешься.
+12.0.7.68974** — из него извлекаешь данные и им же подключаешься.
 
 Время: ~1 час (в основном разовая сборка + копирование данных).
 
@@ -383,7 +383,7 @@ TrinityCore. Если у тебя уже есть TrinityCore‑сервер —
 
 ### 4a. Данные клиента → `data/`
 
-На ПК с клиентом WoW (билд 68275) запусти инструменты‑экстракторы TrinityCore
+На ПК с клиентом WoW (билд 68974) запусти инструменты‑экстракторы TrinityCore
 (`mapextractor`, `vmap4extractor` + `vmap4assembler`, `mmaps_generator`) внутри
 папки клиента. Они создают папки:
 
@@ -404,7 +404,7 @@ docker/data/
 ### 4b. Дампы баз → `import/`
 
 С существующего TrinityCore‑сервера выгрузи базы **world** и **hotfixes**
-(билд 68275):
+(билд 68974):
 
 ```bash
 mysqldump --single-transaction --no-tablespaces --routines -u<user> -p world    > world.sql
@@ -535,7 +535,7 @@ account set gmlevel 1#1 3 -1
 
 ## 8. Подключить клиент
 
-На ПК с клиентом (билд 68275):
+На ПК с клиентом (билд 68974):
 
 1. Положи лаунчер **Arctium** рядом с `WoW.exe`.
 2. В `WoW/_retail_/WTF/Config.wtf` добавь строку:
@@ -586,7 +586,7 @@ docker compose up -d --build
 | worldserver рестартится, `OOMKilled=true` | Мало RAM — дай машине **16–20 ГБ** |
 | Сборка падает / убита | Мало RAM для компиляции (нужно 16 ГБ+), или уменьши `BUILD_JOBS` в `.env` |
 | Клиент висит на "Connecting…" | Неверный `LOGIN_REST_EXTERNAL_ADDRESS` или закрыт порт 8081; проверь `SET portal` |
-| "Version mismatch" на логине | Билд клиента должен быть ровно **68275** |
+| "Version mismatch" на логине | Билд клиента должен быть ровно **68974** |
 
 > Ошибки импорта world 1419 / 1227, на которые натыкались старые сборки, уже
 > обрабатываются этим compose (mysql `log-bin-trust-function-creators=1`, дампы

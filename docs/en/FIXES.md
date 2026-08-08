@@ -242,6 +242,38 @@ table, which this file does not touch. **Needs a restart.**
 
 ---
 
+## 11 — The same NPC standing inside itself
+
+You target a quest giver in Stormwind and there is a second, identical one
+underneath it. Clicking cycles between them; one may be tapped or in combat while
+the other is not. Nothing in the engine deduplicates `creature` — rows accumulated
+from repeated imports of overlapping data sets, so the same spawn exists more than
+once under different guids.
+
+**Measured:** 2,598 groups, **3,403 redundant spawns** removed.
+
+The hard part is what *not* to delete. Grouping on coordinates alone flags 7,319
+groups / 8,379 spawns — and nearly 5,000 of those are healthy data: different
+phases (players at different story stages see different NPCs in the same spot),
+different model or equipment (visibly different creatures), and groups where some
+members belong to `game_event_creature`, `spawn_group` or `pool_members` and
+others do not (the engine picks one — that is variety, not duplication). This fix
+requires all thirteen fields that decide what a player sees to match, and skips
+mixed-membership groups entirely.
+
+The survivor is the formation leader where the group has one, otherwise the
+lowest guid; dependent `creature_addon` and `creature_formations` rows go with
+the removed spawns, so no orphans are created.
+
+**Known limit:** `spawnDifficulties` is a comma-separated list whose element order
+is not normalised, and the grouping compares it as a string. Two identical spawns
+whose lists are written in a different order are not detected — 4 pairs out of
+3,403 on our database. The same quirk means that after a revert some restored
+rows no longer group with their twin, so verify a revert by **row count**, not by
+re-counting duplicate groups. **Needs a restart.**
+
+---
+
 ## Applying & reverting
 
 Apply all: `scripts/apply_fixes.sh` (add `HOTFIXES_DB=hotfixes` to include

@@ -73,7 +73,7 @@ img = diag_glow(img, 1050, 80, 520, BG2, 70)
 img = diag_glow(img, 120, 360, 420, (40, 30, 90), 60)
 d = ImageDraw.Draw(img)
 # top tag
-d.text((64, 56), "TRINITYCORE  ·  RETAIL BUILD 12.0.7.68275", font=font(FB, 22), fill=CYAN)
+d.text((64, 56), "TRINITYCORE  ·  RETAIL BUILD 12.0.7.68974", font=font(FB, 22), fill=CYAN)
 # title
 d.text((60, 92), "WoW Midnight Server", font=font(FB, 84), fill=TEXT)
 d.text((64, 196), "Current-retail World of Warcraft private server — documented,",
@@ -83,7 +83,7 @@ d.text((64, 232), "honest, and community-fixed.", font=font(FL, 30), fill=MUTE)
 d.rounded_rectangle([64, 286, 210, 292], radius=3, fill=GOLD)
 # chips row
 x = 64
-for val, lab in [("48,257", "quests"), ("733,485", "spawns"),
+for val, lab in [("48,257", "quests"), ("730,180", "spawns"),
                  ("517", "maps"), ("26", "races · allied unlocked")]:
     x += chip(d, x, 306, lab, val, font(FB, 30), font(F, 17)) + 16
 img.save(os.path.join(OUT, "banner.png"))
@@ -98,9 +98,9 @@ d.text((50, 100), "Verified counts from the live world database — no fabricati
 cards = [
     ("48,257", "Quests", GOLD),
     ("61,101", "Quest objectives", CYAN),
-    ("733,485", "Creature spawns", GOLD),
+    ("730,180", "Creature spawns", GOLD),
     ("227,684", "Creature templates", CYAN),
-    ("197,724", "GameObject spawns", GOLD),
+    ("197,732", "GameObject spawns", GOLD),
     ("517", "Maps populated", CYAN),
     ("3,084,867", "Loot table rows", GOLD),
     ("172,414", "Vendor rows", CYAN),
@@ -137,7 +137,7 @@ def arrow(x1, y, x2):
     d.polygon([(x2, y), (x2 - 14, y - 8), (x2 - 14, y + 8)], fill=GOLD)
 
 
-box(48, 150, 250, 170, "Your WoW client", ["build 12.0.7.68275", "patched via Arctium", "portal -> your server"], CYAN)
+box(48, 150, 250, 170, "Your WoW client", ["build 12.0.7.68974", "patched via Arctium", "portal -> your server"], CYAN)
 arrow(298, 235, 360)
 box(360, 120, 250, 110, "bnetserver", ["Battle.net auth", "REST dev-cert :8081", "listen :1119"], GOLD)
 box(360, 250, 250, 110, "worldserver", ["game world :8085", "GM console"], GOLD)

@@ -12,7 +12,7 @@
 
 ## Short version (for a Discord / chat post)
 
-> **WoW Midnight private server toolkit — TrinityCore on current retail 12.0.7.68275**
+> **WoW Midnight private server toolkit — TrinityCore on current retail 12.0.7.68974**
 >
 > Not another 3.3.5a server. Documentation plus 11 original, reversible SQL fixes
 > for a modern retail world database, and a companion-bot system that puts 60
@@ -31,7 +31,7 @@
 
 ## Full version (for a forum thread)
 
-### WoW Midnight server toolkit — TrinityCore master, retail 12.0.7.68275
+### WoW Midnight server toolkit — TrinityCore master, retail 12.0.7.68974
 
 Most public private servers run old expansions. This project targets **current
 retail** and tries to be honest about what actually works.

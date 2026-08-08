@@ -3,7 +3,7 @@ name: wow-midnight-server
 # Deploy the server in containers. You still supply two things yourself
 # (Blizzard's property — see ../DISCLAIMER.md):
 #   1. Client-extracted data  -> mount into ./data   (dbc/maps/vmaps/mmaps)
-#   2. A world DB dump @68275  -> drop into ./import  (imported on first run)
+#   2. A world DB dump @68974  -> drop into ./import  (imported on first run)
 
 services:
   mysql:

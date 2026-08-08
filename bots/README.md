@@ -5,7 +5,7 @@ real `Player` objects with a null-socket `WorldSession`, driven by their own
 decision loop. They fight, gather, craft, quest, repair, trade at the auction
 house, group up and talk. Nobody has to be logged in for any of it to happen.
 
-Written for **TrinityCore master, retail 12.0.7 (build 68275)**. Almost all of it
+Written for **TrinityCore master, retail 12.0.7 (build 68974)**. Almost all of it
 lives under `src/server/scripts/Custom/Bots/` and uses public engine APIs, with
 **one nine-line core patch** — `bots/core-patch/`, applied automatically by the
 Docker build. A socket-less bot never runs the login pipeline that loads its

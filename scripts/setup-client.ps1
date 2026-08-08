@@ -36,7 +36,7 @@
     Asset language: enUS, ruRU, deDE, frFR, esES, ...
 
 .PARAMETER Build
-    The build your server expects. Default 12.0.7.68275. This is used to CHECK
+    The build your server expects. Default 12.0.7.68974. This is used to CHECK
     what you get, not to select it - see the warning above.
 
 .PARAMETER Product
@@ -61,7 +61,7 @@ param(
     [string] $InstallDir,
     [string] $ServerIP,
     [string] $Locale  = 'enUS',
-    [string] $Build   = '12.0.7.68275',
+    [string] $Build   = '12.0.7.68974',
     [string] $Product = 'wow',
     [switch] $SkipInstall
 )
