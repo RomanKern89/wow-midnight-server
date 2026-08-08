@@ -101,12 +101,21 @@ BNetInstaller.exe --prod wow --lang enUS --dir "C:\Games\WoW_Midnight" --uid wow
 1. **Close the Battle.net app first.** It fights the Agent for the same install.
 2. **Pass `--verbose false`.** Verbose progress reporting reads the cursor
    position and crashes when there is no interactive desktop session.
-3. **If you hit Agent error 2310**, the upstream release is the problem, not you.
-   That failure comes from a missing `phoenix-agent/1.0` User-Agent, fixed in
-   [this fork](https://github.com/xCortlandx/Battle.Net-Installer) (pull request
-   #27). The reference client for this project was built from that fork after the
-   upstream v2.1 release stopped working. Errors surface as bare numeric codes —
-   the readable diagnostics are in the Battle.net **agent log**.
+3. **Agent error 2310 — as of 2026-08-08 this tool does not work at all.**
+   Verified on a machine where it worked in July: the upstream v2.1 release
+   fails with `Agent Error: 2310`, and so does a fresh build of the
+   [fork](https://github.com/xCortlandx/Battle.Net-Installer) whose pull request
+   #27 ("Nice try Blizzard") fixed 2310 back in February 2026. Both fail
+   identically, with the Agent running and authenticated, with and without
+   `--uid`, in any locale, into an empty directory.
+
+   Blizzard evidently tightened Agent-side validation again. The February fix
+   set `MonitorPid` to a real process id and added proper JSON headers; that is
+   no longer enough. Until someone updates the tool, **use Option A — the
+   Battle.net app installs WoW into a directory you choose and is not affected.**
+
+   (An earlier version of this page blamed a missing `phoenix-agent/1.0`
+   User-Agent. That was wrong — upstream has always sent that header.)
 
 > If you only need the client to *extract server data* rather than to play, you
 > can skip this entirely: the TrinityCore extractors read Blizzard's CASC storage
