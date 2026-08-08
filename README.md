@@ -2,7 +2,7 @@
 
 ![WoW Midnight Server](assets/banner.png)
 
-# WoW Midnight Server — TrinityCore 12.0.7 (build 68275)
+# WoW Midnight Server — TrinityCore 12.0.7 (build 68974)
 
 > A documented, community-maintained **World of Warcraft: Midnight** private
 > server built on **TrinityCore master**, on the retail **12.0.7** line —
@@ -10,10 +10,9 @@
 > playable.
 
 > **On build numbers:** everything here is written against build
-> **12.0.7.68275**, which was the live retail build on 2026-07-05. Retail moves
-> every few weeks and nothing can install an older build, so a client downloaded
-> today will be newer. Point the server at whatever build you can actually get —
-> see **[CLIENT.md](docs/en/CLIENT.md)**.
+> **12.0.7.68974**, the live retail build. This project deliberately tracks
+> whatever retail is serving, so a client downloaded today matches — see
+> **[CLIENT.md](docs/en/CLIENT.md)**.
 
 **🌐 Language:** **English** · [Русский](README.ru.md)
 
@@ -50,9 +49,13 @@ kept honest and playable:
   bad.
 - **Newest content, actually reachable** — allied-race and class intros, modern
   zones (Khaz Algar, Isle of Dorn, Harandar) resurrect-able and quest-able.
-- **Curated fix pack** — quest-chain repairs, quest-blocking GameObject spawns,
-  legacy-raid lockout/journal bindings, newest-zone graveyards. All additive,
-  all reversible, all on empty ID bands so they won't clash with a stock install.
+- **Curated fix pack** — 12 files: quest-chain repairs, quest-blocking GameObject
+  spawns, legacy-raid lockout/journal bindings, newest-zone graveyards, holidays
+  re-anchored to the real calendar, stray raid bosses removed from starter zones,
+  duplicate spawns removed, and the NPC repairs above. All additive, all
+  reversible, all on empty ID bands so they won't clash with a stock install.
+  Each one verified by breaking a real database, fixing it, re-running the fix,
+  and then reverting to confirm the original numbers come back exactly.
 - **Honest engineering** — where the engine hits a true ceiling (boss combat AI,
   brand-new phased-scene scripting), it's documented, not faked.
 
@@ -65,12 +68,12 @@ kept honest and playable:
 | Quests | **48,257** |
 | Quest objectives | 61,101 |
 | Quest starters / enders (NPC) | 27,694 / 34,524 |
-| Creature templates / spawns | 227,684 / **733,485** |
-| GameObject templates / spawns | 89,967 / 197,724 |
+| Creature templates / spawns | 227,684 / **730,180** |
+| GameObject templates / spawns | 89,967 / 197,732 |
 | Maps with spawns | **517** |
 | Loot table rows | 3,084,867 |
 | Vendor rows | 172,414 |
-| Retail build | **12.0.7.68275** |
+| Retail build | **12.0.7.68974** |
 
 ---
 

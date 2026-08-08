@@ -24,7 +24,7 @@ anyone else's copy.
 |---|---|
 | **A Battle.net account** | Free to create. No subscription needed to download. |
 | **Disk space** | ~100 GB for a full modern retail install. |
-| **The right build** | This project targets **12.0.7.68275**. The build must match your world database. |
+| **The right build** | This project tracks **12.0.7.68974**, the live retail build. The build must match your world database. |
 
 ---
 
@@ -59,17 +59,23 @@ download that would produce the wrong build.
 
 **If the live build is newer than your server's**, there are two real options:
 
-1. **Move the server to the live build.** Update TrinityCore, re-extract the game
-   data from the new client, and set the realm's gamebuild accordingly. This is
-   the sustainable answer — retail moves every few weeks, and a server pinned to
-   a build nobody can download any more is a dead end for new players.
+1. **Move the server to the live build.** Update TrinityCore, refresh the game
+   data, and set the realm's gamebuild accordingly. This is the sustainable
+   answer — retail moves every few weeks, and a server pinned to a build nobody
+   can download any more is a dead end for new players.
 2. **Keep an existing install of the old build** and stop the Battle.net app from
    updating it. Point it at your server with
    `scripts/setup-client.ps1 -SkipInstall`.
 
-> This repository documents build **12.0.7.68275**, which was the live build on
-> 2026-07-05. Retail has moved on since. Someone downloading today gets a newer
-> client, so expect to take option 1.
+> **This repository tracks the live build, currently 12.0.7.68974.** That is the
+> deliberate policy — anyone can download it today, so a newcomer is never stuck.
+> Retail will move again; when it does, take option 1.
+>
+> Moving the server is far less work than it sounds. `maps`, `vmaps` and `mmaps`
+> are versioned by TrinityCore's own **format**, not by the game build, so they
+> usually carry over untouched — 68275 → 68974 needed no re-extraction of any of
+> them. In practice it is: rebuild the core, refresh `dbc`, apply the new world
+> SQL, set `gamebuild`. See **[SETUP.md](SETUP.md)**.
 
 ---
 
@@ -125,7 +131,7 @@ BNetInstaller.exe --prod wow --lang enUS --dir "C:\Games\WoW_Midnight" --uid wow
 
 ## What a correct install looks like
 
-Verified against a working 12.0.7.68275 install (~131 GB):
+Verified against a working retail install (~131 GB):
 
 ```
 WoW_Midnight\
@@ -154,7 +160,7 @@ Everything downstream depends on this. The fastest and most reliable check is
 Get-Content .build.info | Select-String "12\.0\.7"
 ```
 
-You are looking for **`12.0.7.68275`**. The same file's `Product` field should
+You are looking for the build your server runs — **`12.0.7.68974`** here. The same file's `Product` field should
 read `wow` (retail) — that is the product code to pass to `--prod`.
 
 You can also read the build on the login screen (bottom corner), or from

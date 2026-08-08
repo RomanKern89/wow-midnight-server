@@ -1,0 +1,35 @@
+diff --git a/src/common/Collision/Maps/MapTree.cpp b/src/common/Collision/Maps/MapTree.cpp
+index dbb35f7e..db13607c 100644
+--- a/src/common/Collision/Maps/MapTree.cpp
++++ b/src/common/Collision/Maps/MapTree.cpp
+@@ -311,8 +311,28 @@ namespace VMAP
+             uint32 numSpawnIndices = 0;
+             if (result == LoadResult::Success && fread(&numSpawnIndices, sizeof(uint32), 1, fileResult.SpawnIndicesFile.get()) != 1)
+                 result = LoadResult::ReadFromFileFailed;
+-            if (numSpawns != numSpawnIndices)
+-                result = LoadResult::ReadFromFileFailed;
++            if (result == LoadResult::Success && numSpawns != numSpawnIndices)
++            {
++                // A child map with no geometry of its own for this tile borrows the
++                // parent's .vmtile but keeps its own .vmtileidx. The counts agree only
++                // when the child inherited the parent's whole tile. Where it holds just
++                // a few models spilling in from a neighbouring inherited ADT the index
++                // file is shorter, and the tile cannot be paired at all: the indices are
++                // positional, so there is no way to tell which of the parent's spawns
++                // they belong to. Nothing is loadable, but the data is not defective
++                // either - report it as absent rather than broken so it does not drown
++                // the log. On our realm that is 208 of 89,098 inherited tiles, none of
++                // which contain a single spawn, and 35,398 error lines per server
++                // lifetime. Reported upstream as TrinityCore issue #31964.
++                //
++                // Deliberately narrow: only a BORROWED tile with FEWER indices than
++                // spawns. A same-map mismatch, or more indices than spawns, still
++                // reports as a failure.
++                if (fileResult.UsedMapId != int32(iMapID) && numSpawnIndices < numSpawns)
++                    result = LoadResult::FileNotFound;
++                else
++                    result = LoadResult::ReadFromFileFailed;
++            }
+             tileReferenceVals.reserve(numSpawns);
+             for (uint32 i = 0; i < numSpawns && result == LoadResult::Success; ++i)
+             {

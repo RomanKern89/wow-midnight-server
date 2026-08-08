@@ -13,5 +13,5 @@ data/
 ```
 
 Produce these with the TrinityCore extractor tools run against **your own**
-retail WoW client (build 68275). This is Blizzard's data — it stays on your
+retail WoW client (build 68974). This is Blizzard's data — it stays on your
 machine and is git-ignored here (never committed).

@@ -1,6 +1,6 @@
 # DB dumps go here
 
-Drop your TrinityCore database dumps (build **12.0.7.68275**) into this folder.
+Drop your TrinityCore database dumps (build **12.0.7.68974**) into this folder.
 On `docker compose up`, `db-init` imports them and applies our community fixes.
 
 | File | Imported into | Needed for |

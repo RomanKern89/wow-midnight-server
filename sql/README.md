@@ -1,13 +1,13 @@
 # Community Fix SQL
 
 Original, additive server-side fixes authored for a **TrinityCore master** world
-database at retail build **12.0.7.68275 (Midnight)**.
+database at retail build **12.0.7.68974 (Midnight)**.
 
 Every file is **safe to apply twice** — each one clears its own custom ID band,
 uses `INSERT IGNORE`, or creates its backup table only if absent — and every file
 ends with a **revert comment** that undoes exactly what it did.
 
-All **eleven** were verified by rolling a copy of a real database back to its
+All **twelve** were verified by rolling a copy of a real database back to its
 broken state, applying each fix, confirming the defect count reaches zero,
 applying it a second time with the backup tables proven untouched, and finally
 running the documented revert to check the original numbers come back exactly.
@@ -24,6 +24,7 @@ running the documented revert to check the original numbers come back exactly.
 | `08_npc_missing_models.sql` | Creatures spawned in the world that have no model, so the engine refuses to load them at all — mostly kill-credit and quest-objective NPCs, which silently breaks those objectives. 889 entries / 1,908 spawns measured | worldserver restart |
 | `09_npc_broken_spawns.sql` | Spawns with no `creature_template`, at the map origin, outside the map grid, or fallen through the world. Sunken ones are lifted to the local ground where neighbours allow it, deleted only when they cannot be placed | worldserver restart |
 | `10_npc_orphan_references.sql` | `creature_addon` rows pointing at a missing waypoint path or a deleted spawn, and formations whose leader or member no longer exists. Run after 07 and 09 | worldserver restart |
+| `11_duplicate_spawns.sql` | The same NPC spawned two or more times in the same spot — 2,598 groups / 3,403 redundant spawns. Only removes copies identical in all thirteen fields that decide what a player sees; different phases, models, equipment and event/pool membership are left alone. Run after 07-10 | worldserver restart |
 
 ### `sql/hotfixes/` — a different database
 

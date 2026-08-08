@@ -13,7 +13,7 @@
  *   5. AoE branch        (when ctx.IsAoEMode)
  *   6. cooldown ability, then filler
  *
- * SPELL IDS: these are baseline class abilities, but this realm runs retail build 12.0.7.68275 and
+ * SPELL IDS: these are baseline class abilities, but this realm runs retail build 12.0.7.68974 and
  * ids do get reshuffled between expansions. Each one is therefore verified against the running
  * server's spell store (".lookup spell <name>" on the console) rather than trusted from memory —
  * and until an id is verified, DoCastChecked's sSpellMgr guard turns a wrong id into a silently

@@ -49,7 +49,7 @@ if ! have_tables world; then
     import_dump "$DUMP" world
   else
     echo "!! No world DB dump found in ./import — the world DB is EMPTY."
-    echo "!! Drop a build-68275 world dump (world.sql) into docker/import/ and re-run 'docker compose up db-init'."
+    echo "!! Drop a build-68974 world dump (world.sql) into docker/import/ and re-run 'docker compose up db-init'."
   fi
 else
   echo ">> world DB already populated — skipping dump import."
