@@ -123,13 +123,23 @@ d = ImageDraw.Draw(img)
 d.text((48, 36), "How it fits together", font=font(FB, 40), fill=TEXT)
 
 
-def box(x, y, w, h, title, sub, col):
+TITLE_TOP, LINE_H, PAD_BOTTOM = 58, 26, 14
+
+
+def box_height(sub):
+    """Tall enough for the title plus every line, so nothing spills over the border."""
+    return TITLE_TOP + LINE_H * len(sub) + PAD_BOTTOM
+
+
+def box(x, y, w, title, sub, col):
+    h = box_height(sub)
     d.rounded_rectangle([x, y, x + w, y + h], radius=16, fill=CARD, outline=col, width=2)
     d.text((x + 20, y + 20), title, font=font(FB, 26), fill=TEXT)
-    yy = y + 58
+    yy = y + TITLE_TOP
     for line in sub:
         d.text((x + 20, yy), line, font=font(F, 18), fill=MUTE)
-        yy += 26
+        yy += LINE_H
+    return h
 
 
 def arrow(x1, y, x2):
@@ -137,14 +147,31 @@ def arrow(x1, y, x2):
     d.polygon([(x2, y), (x2 - 14, y - 8), (x2 - 14, y + 8)], fill=GOLD)
 
 
-box(48, 150, 250, 170, "Your WoW client", ["build 12.0.7.68974", "patched via Arctium", "portal -> your server"], CYAN)
-arrow(298, 235, 360)
-box(360, 120, 250, 110, "bnetserver", ["Battle.net auth", "REST dev-cert :8081", "listen :1119"], GOLD)
-box(360, 250, 250, 110, "worldserver", ["game world :8085", "GM console"], GOLD)
-arrow(610, 235, 672)
-box(672, 150, 250, 170, "MySQL", ["auth", "characters", "world  (+ our fixes)", "hotfixes"], CYAN)
-box(972, 150, 180, 170, "Fix pack", ["quest chains", "GO spawns", "raid bindings", "graveyards"], (245, 197, 92))
-d.line([922, 235, 972, 235], fill=CARD_BD, width=2)
+CLIENT = ["build 12.0.7.68974", "patched via Arctium", "portal -> your server"]
+BNET = ["Battle.net auth", "REST dev-cert :8081", "listen :1119"]
+WORLD = ["game world :8085", "GM console"]
+DBS = ["auth", "characters", "world  (+ our fixes)", "hotfixes"]
+FIXES = ["quest chains", "GO spawns", "raid bindings", "graveyards", "duplicate spawns"]
+
+# the two stacked middle boxes define the vertical span everything else centres on
+BNET_Y = 110
+GAP = 22
+WORLD_Y = BNET_Y + box_height(BNET) + GAP
+MID = (BNET_Y + WORLD_Y + box_height(WORLD)) // 2
+
+
+def centred(sub):
+    return MID - box_height(sub) // 2
+
+
+box(48, centred(CLIENT), 250, "Your WoW client", CLIENT, CYAN)
+arrow(298, MID, 360)
+box(360, BNET_Y, 250, "bnetserver", BNET, GOLD)
+box(360, WORLD_Y, 250, "worldserver", WORLD, GOLD)
+arrow(610, MID, 672)
+box(672, centred(DBS), 250, "MySQL", DBS, CYAN)
+box(972, centred(FIXES), 180, "Fix pack", FIXES, (245, 197, 92))
+d.line([922, MID, 972, MID], fill=CARD_BD, width=2)
 img.save(os.path.join(OUT, "architecture.png"))
 
 print("wrote:", os.listdir(OUT))
