@@ -274,6 +274,39 @@ re-counting duplicate groups. **Needs a restart.**
 
 ---
 
+## hotfixes/02 — Instances with no collision, because an override said their parent was Azeroth
+
+The log fills with `Could not load VMAP name:City of Threads, id:2669, ...`,
+repeating for as long as the server runs — 1,367 lines in one 2h46m run on our
+realm, across Priory of the Sacred Flame, City of Threads, The Dawnbreaker, The
+Rookery and Vale of Eternal Blossoms. Inside the affected tiles the engine has no
+line-of-sight, height or collision data at all.
+
+**A DB2 hotfix row replaces the whole record** from the `.db2` file; it does not
+merge field by field. `hotfixes`.`map` held **18 rows empty apart from their ID** —
+`Directory` NULL, `MapName` NULL, `WdtFileDataID` 0, and the damaging part,
+`ParentMapID` = 0 and `CosmeticParentMapID` = 0.
+
+Zero is not "no parent" — that is **-1**. Zero is map 0, Azeroth. So the engine
+believed Azeroth was those instances' parent. A child map with no geometry of its
+own for a tile borrows the parent's and pairs it with its own index file;
+borrowing from the wrong map gives two files describing different places, the
+spawn counts disagree, and the tile is rejected outright.
+
+Measured on tile 26_29 of City of Threads: the map's own index file holds 2,494
+entries, its real parent Khaz Algar holds **2,494** — exact — and Azeroth holds
+**22**. Every affected tile shows the same shape.
+
+The rows were absent from `hotfix_data`, so they were never sent to game clients:
+the damage was server-side only. Deleting them lets the engine read the real
+record from `Map.db2`.
+
+**Result:** 1,367 errors in the run before, **0** after. Only rows empty in all
+five fields are touched, so a deliberate override cannot be caught by accident.
+**Needs a restart.**
+
+---
+
 ## Applying & reverting
 
 Apply all: `scripts/apply_fixes.sh` (add `HOTFIXES_DB=hotfixes` to include

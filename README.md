@@ -49,7 +49,7 @@ kept honest and playable:
 - **Eight maps that spawned nothing now spawn again** — including **Darkmaul
   Citadel**, the Exile's Reach dungeon, which had never spawned a single NPC.
   1,218 creatures and 1,073 gameobjects recovered.
-- **Curated fix pack** — 12 files: quest-chain repairs, quest-blocking GameObject
+- **Curated fix pack** — 13 files: quest-chain repairs, quest-blocking GameObject
   spawns, legacy-raid lockout/journal bindings, newest-zone graveyards, holidays
   re-anchored to the real calendar, stray raid bosses removed from starter zones,
   duplicate spawns removed, and the NPC repairs above. All additive, all reversible, all on empty ID bands.

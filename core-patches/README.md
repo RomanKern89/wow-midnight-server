@@ -28,13 +28,20 @@ count grows with uptime and would not compare like with like:
 | **A** — borrowed parent tile, fewer indices than spawns (what this patch silences) | 36 | **0** |
 | **B** — spawn counts equal, load fails for another reason | 172 | 86 |
 
-Class A is gone completely. Class B is a **different, unexplained defect** that
-the patch deliberately leaves reported — those tiles have matching counts, so
-something else fails during the read, and silencing them would hide a real
-problem.
+Class A is gone completely — that is what this patch does.
 
-Do not read a drop in raw log lines as the effect of this patch: class B
-dominates the line count, and both classes repeat as tiles load and unload.
+**Class B was our own fault, not upstream's**, and is fixed separately by
+`sql/hotfixes/02_remove_empty_map_overrides.sql`: 18 empty rows in the hotfixes
+`map` table set `ParentMapID` = 0, so the engine borrowed those instances'
+geometry from Azeroth instead of their real parent. With those rows gone the
+count went to **0** and stayed there.
+
+The two fixes are independent and both are needed: the SQL one stops the engine
+looking at the wrong map, this patch stops it complaining about the tiles it
+legitimately cannot pair.
+
+Do not read a drop in raw log lines as the effect of this patch alone — class B
+dominated the line count, and both classes repeat as tiles load and unload.
 
 ### The problem
 
