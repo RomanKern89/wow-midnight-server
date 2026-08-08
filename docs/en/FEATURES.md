@@ -4,7 +4,7 @@
 
 ## Build & scope
 
-- **TrinityCore master**, retail build **12.0.7.68275 ("Midnight")**.
+- **TrinityCore master**, retail build **12.0.7.68974 ("Midnight")**.
 - One world database spanning **Vanilla → Midnight**, with **517 maps**
   populated.
 
@@ -15,8 +15,8 @@
 | Quests | **48,257** |
 | Quest objectives | 61,101 |
 | Quest starters / enders (NPC) | 27,694 / 34,524 |
-| Creature templates / spawns | 227,684 / 733,485 |
-| GameObject templates / spawns | 89,967 / 197,724 |
+| Creature templates / spawns | 227,684 / 730,180 |
+| GameObject templates / spawns | 89,967 / 197,732 |
 | Maps with spawns | 517 |
 | Loot rows | 3,084,867 |
 | Vendor rows | 172,414 |

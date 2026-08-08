@@ -1,6 +1,6 @@
 # Connecting the Client — step by step (EN)
 
-Point a retail **12.0.7.68275** client at your server. This page is deliberately
+Point a retail **12.0.7.68974** client at your server. This page is deliberately
 concrete: it separates **what you change on the server** from **what you change
 in the client**.
 
@@ -12,7 +12,7 @@ in the client**.
 
 You do **not** edit game data. You only:
 
-1. Make sure the client is **exactly build 68275** — see **[CLIENT.md](CLIENT.md)**.
+1. Make sure the client is **exactly build 68974** — see **[CLIENT.md](CLIENT.md)**.
 2. Drop **`Arctium Game Launcher.exe`** in the install root (beside `_retail_`).
 3. Add **one line** to `_retail_\WTF\Config.wtf`: `SET portal "YOUR_SERVER_IP"`.
 4. Launch through **Arctium** (not the Blizzard app).
@@ -74,7 +74,7 @@ SOAP_USER='1#1' SOAP_PASS='...' scripts/create-account.sh -e you@example.com -p 
 
 ## Client-side changes (the part you asked about)
 
-### 1. Match the build — 68275
+### 1. Match the build — 68974
 
 The client build **must** equal the server's world-DB build. A mismatched build
 fails at login every time. **[CLIENT.md](CLIENT.md)** covers obtaining the client
@@ -145,7 +145,7 @@ Modern retail login goes through the **HTTP REST dev-certificate** path (port
 | Symptom | Cause | Fix |
 |---|---|---|
 | Stuck "Connecting" / "Authenticating" | REST endpoint 8081 unreachable, or `portal` wrong | Verify `LoginREST.ExternalAddress` + port 8081 open; check `SET portal` |
-| "Version mismatch" / bounced at login | Client build ≠ 68275 | Reinstall/repin the client to 68275 |
+| "Version mismatch" / bounced at login | Client build ≠ 68974 | Reinstall/repin the client to 68974 |
 | Realm list empty | `realmlist.address` wrong or worldserver (8085) down | Fix the `realmlist` row; confirm 8085 is listening |
 | Certificate/handshake error | Arctium not used, or cert not trusted | Always launch via Arctium |
 | In game, but a character has no quests | Data/quest-chain gap | See [FIXES.md](FIXES.md) |

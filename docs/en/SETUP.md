@@ -1,7 +1,7 @@
 # Server Setup (EN)
 
 How to build and run a TrinityCore **master** server at retail build
-**12.0.7.68275 (Midnight)**. You need your own legally-owned retail WoW client.
+**12.0.7.68974 (Midnight)**. You need your own legally-owned retail WoW client.
 
 > [Русский](../ru/SETUP.md)
 
@@ -52,7 +52,7 @@ GRANT ALL ON *.* TO 'trinity'@'localhost';
 ```
 
 Import the TrinityCore SQL base for `auth`, `characters`, `hotfixes`, and a
-**world database that matches build 68275**. The world DB is built from your own
+**world database that matches build 68974**. The world DB is built from your own
 data — this repo does not ship one (see [DISCLAIMER](../../DISCLAIMER.md)).
 
 ## 5. Configure
