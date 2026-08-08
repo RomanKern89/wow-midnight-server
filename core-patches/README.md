@@ -17,10 +17,24 @@ The bots need one more patch of their own — see `bots/core-patch/` on the
 
 ## 0001-vmap-partial-parent-tile.patch
 
-**Stops 35,398 spurious `Could not load VMAP` errors per server lifetime.**
-Measured on our realm: 4,827 lines in one run before, 35 after — a 99.3%
-reduction, and the remaining 35 are a different, genuine problem that the patch
-deliberately leaves reported.
+**Removes one whole class of spurious `Could not load VMAP` errors.**
+
+Measured on our realm by classifying every failing tile in a run before the patch
+and a run after it. Counting **unique tiles**, not log lines, because the line
+count grows with uptime and would not compare like with like:
+
+| Failing tiles | before | after |
+|---|--:|--:|
+| **A** — borrowed parent tile, fewer indices than spawns (what this patch silences) | 36 | **0** |
+| **B** — spawn counts equal, load fails for another reason | 172 | 86 |
+
+Class A is gone completely. Class B is a **different, unexplained defect** that
+the patch deliberately leaves reported — those tiles have matching counts, so
+something else fails during the read, and silencing them would hide a real
+problem.
+
+Do not read a drop in raw log lines as the effect of this patch: class B
+dominates the line count, and both classes repeat as tiles load and unload.
 
 ### The problem
 

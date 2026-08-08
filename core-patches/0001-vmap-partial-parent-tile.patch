@@ -1,5 +1,5 @@
 diff --git a/src/common/Collision/Maps/MapTree.cpp b/src/common/Collision/Maps/MapTree.cpp
-index dbb35f7e..db13607c 100644
+index dbb35f7e..bab03e26 100644
 --- a/src/common/Collision/Maps/MapTree.cpp
 +++ b/src/common/Collision/Maps/MapTree.cpp
 @@ -311,8 +311,28 @@ namespace VMAP
@@ -18,9 +18,9 @@ index dbb35f7e..db13607c 100644
 +                // positional, so there is no way to tell which of the parent's spawns
 +                // they belong to. Nothing is loadable, but the data is not defective
 +                // either - report it as absent rather than broken so it does not drown
-+                // the log. On our realm that is 208 of 89,098 inherited tiles, none of
-+                // which contain a single spawn, and 35,398 error lines per server
-+                // lifetime. Reported upstream as TrinityCore issue #31964.
++                // the log. On our realm 208 of 89,098 inherited tiles are in this shape
++                // and not one of them contains a single spawn. Reported upstream as
++                // TrinityCore issue #31964.
 +                //
 +                // Deliberately narrow: only a BORROWED tile with FEWER indices than
 +                // spawns. A same-map mismatch, or more indices than spawns, still
