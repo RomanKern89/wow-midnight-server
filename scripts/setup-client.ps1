@@ -164,12 +164,33 @@ if (-not $SkipInstall) {
         Warn 'dotnet not found - Battle.Net-Installer needs the .NET 8 runtime (https://dotnet.microsoft.com/download)'
     }
 
+    # NOTE the brace syntax: "$env:ProgramFiles(x86)\..." expands $env:ProgramFiles
+    # and then appends a literal "(x86)", producing "C:\Program Files(x86)\" with no
+    # space - a path that never exists. ${env:ProgramFiles(x86)} is the correct form.
     $bnetApp = @(
-        "$env:ProgramFiles(x86)\Battle.net\Battle.net.exe",
+        "${env:ProgramFiles(x86)}\Battle.net\Battle.net.exe",
         "$env:ProgramFiles\Battle.net\Battle.net.exe"
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     if ($bnetApp) { Ok 'Battle.net app found' }
     else { Warn 'Battle.net app not found. It must be installed and logged in once - the Agent does the actual download.' }
+
+    # The Agent is what actually downloads. If it is not running, the install fails
+    # with the opaque "Agent Error: 2310" and nothing is written to disk.
+    $agent = Get-Process -Name 'Agent' -ErrorAction SilentlyContinue
+    if ($agent) {
+        Ok 'Battle.net Agent is running'
+    } else {
+        Warn 'Battle.net Agent is NOT running - the install will fail with Agent error 2310.'
+        Write-Host @"
+    Start the Battle.net app and sign in at least once, then leave it running or
+    let it start the Agent. Without an authenticated Agent there is nothing to
+    drive the download, no matter which build of the installer you use.
+"@ -ForegroundColor Yellow
+        if ((Ask '    Continue anyway? (y/n)' 'n') -notmatch '^[Yy]') {
+            Write-Host '    Stopped before downloading.' -ForegroundColor Yellow
+            exit 1
+        }
+    }
 
     Step 2 'Locating Battle.Net-Installer'
     $installer = Find-Tool @('BNetInstaller.exe','Battle.Net-Installer.exe') @($scriptDir, (Join-Path $scriptDir 'tools'), $PWD.Path)
