@@ -49,7 +49,7 @@ kept honest and playable:
   bad.
 - **Newest content, actually reachable** — allied-race and class intros, modern
   zones (Khaz Algar, Isle of Dorn, Harandar) resurrect-able and quest-able.
-- **Curated fix pack** — 12 files: quest-chain repairs, quest-blocking GameObject
+- **Curated fix pack** — 13 files: quest-chain repairs, quest-blocking GameObject
   spawns, legacy-raid lockout/journal bindings, newest-zone graveyards, holidays
   re-anchored to the real calendar, stray raid bosses removed from starter zones,
   duplicate spawns removed, and the NPC repairs above. All additive, all

@@ -7,7 +7,7 @@ Every file is **safe to apply twice** — each one clears its own custom ID band
 uses `INSERT IGNORE`, or creates its backup table only if absent — and every file
 ends with a **revert comment** that undoes exactly what it did.
 
-All **twelve** were verified by rolling a copy of a real database back to its
+All **thirteen** were verified by rolling a copy of a real database back to its
 broken state, applying each fix, confirming the defect count reaches zero,
 applying it a second time with the backup tables proven untouched, and finally
 running the documented revert to check the original numbers come back exactly.
@@ -31,6 +31,7 @@ running the documented revert to check the original numbers come back exactly.
 | File | What it fixes | Apply to |
 |------|---------------|----------|
 | `hotfixes/01_map_difficulty_unlock.sql` | Eight maps where **nothing spawns at all** because the map has no legal difficulty for its spawns to live in — including Darkmaul Citadel, the Exile's Reach dungeon. Recovers 1,218 creature and 1,073 gameobject spawns | the **`hotfixes`** DB, then restart |
+| `hotfixes/02_remove_empty_map_overrides.sql` | 18 rows in `map` that are empty apart from their ID, including `ParentMapID` = 0 — which is not "no parent" (that is -1) but **map 0, Azeroth**. The engine borrowed those instances' terrain from the wrong map, so their tiles never loaded. 1,367 log errors in one run before, 0 after | the **`hotfixes`** DB, then restart |
 
 ## Apply
 
