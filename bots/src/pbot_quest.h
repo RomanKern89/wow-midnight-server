@@ -55,11 +55,26 @@ namespace PbotQuest
     // Per bot rather than shared, because a quest another bot cannot take may be perfectly available
     // to this one.
     bool Tick(Player* bot, ObjectGuid& giverGuid, uint32& cooldownMs, uint32& walkMs,
-              uint32& speakCooldownMs, std::unordered_set<uint32>& refused, uint32 diff);
+              uint32& speakCooldownMs, std::unordered_set<uint32>& refused, uint32& pruneCooldownMs,
+              uint32 diff);
 
     // One-line summary of a bot's quest log for the console diagnostic: how many quests it holds,
     // how many are complete, and the name of the newest one.
     std::string Describe(Player* bot);
+
+    // Run the giver/ender diagnostic now, bypassing its once-a-minute rate limit. Used when a
+    // bot has just arrived at a hand-in destination and the answer actually matters.
+    void ReportGiverSearchNow(Player* bot);
+
+    // Is there a live questgiver within a few paces that takes back a quest this bot has FINISHED?
+    //
+    // The decision ladder consults delivery, loot, gathering and town errands before questing, and
+    // none of them knows the bot is already standing where the hand-in happens. Measured on the live
+    // realm: a bot reached a taker (probe: NPC in 120y, runtime npcflag 3, quest complete) and the
+    // very next line was "delivery: travelled to map 571 to collect 1 rewards" - the cross-map lift
+    // teleported it off the spot before the quest module ever ran. This predicate lets the ladder
+    // hold those rungs for one tick so the hand-in comes first, as a player would do.
+    bool HasTakerInReach(Player* bot);
 }
 
 #endif // TRINITYCORE_PBOT_QUEST_H

@@ -307,6 +307,49 @@ five fields are touched, so a deliberate override cannot be caught by accident.
 
 ---
 
+## 12 - Creatures that spawn with 0 health
+
+**File:** `sql/12_zero_hp_templates.sql`
+
+**Symptom:** a handful of creatures stand in the world alive with an empty
+health bar. They die to the first hit of any kind, and any "health percent"
+logic reads 0.
+
+**Root cause:** health is `ceil(baseHealth * HealthModifier)`. Where the
+modifier is 0 the base is 0 and `SetMaxHealth(0)` clamps it to 1. Two groups
+carry a zero: entries that have a healthy row on another difficulty (9 rows
+over 8 entries), and entries that have none anywhere (54 rows over 42 entries).
+
+**Fix:** the 9 rows copy the value from the same entry's healthy difficulty -
+nothing is invented. The 54 are listed in the report rather than guessed at:
+the modifier is not a small multiplier in this database (values run to 5e7), it
+encodes absolute health per expansion, so an invented number would be wrong by
+orders of magnitude.
+
+**Verified:** applied to a live database - 63 zero rows before, 9 changed, 54
+remaining, and the backup table holds all 63. The 86 rows whose modifier is
+tiny but non-zero are untouched on purpose: they are one-hit objects (Missile
+Target, Quest Bunny, Specimen Tank) and raising them would break content.
+
+---
+
+## 13 - Creature health halved (optional balance tuning)
+
+**File:** `sql/13_creature_health_half.sql`
+
+**Not a fix.** It halves the health of every non-boss creature template
+(521,923 rows) and exists because this realm's population is sixty bots:
+ordinary mobs took 130+ hits to kill - 20-100 damage against 3,000-1,400,000
+health - so a bot died before it finished a fight.
+
+**Measured:** deaths per kill 31% -> 15.5%, kills per hour 435 -> 522. A later
+fix to socket-less visibility took the same ratio to about 4%.
+
+**Warning:** do not apply it to a player server, it changes every fight for
+everyone. The file carries both a backup table and a revert.
+
+---
+
 ## Applying & reverting
 
 Apply all: `scripts/apply_fixes.sh` (add `HOTFIXES_DB=hotfixes` to include
@@ -318,3 +361,8 @@ Every file in this document was verified by rolling a copy of a real database
 back to its broken state, applying the fix, confirming the defect count reaches
 zero, applying it a second time, and then running the documented revert to check
 the original numbers come back exactly.
+
+`12` and `13` are newer and were verified differently: applied to a live
+database and checked by consequence - row counts before and after for `12`,
+creature health observed in combat for `13` - rather than by a full rollback cycle.
+Both carry a backup table and a revert.

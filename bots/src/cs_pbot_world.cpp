@@ -17,6 +17,8 @@
 
 #include "pbot_ai.h"
 #include "pbot_profession.h" // the craft diagnostic: recipes known vs materials held
+#include "pbot_social.h"    // the generated-line pool (.pbot llm reload / stats)
+#include "pbot_intent.h"    // the generated behaviour profiles (.pbot intent reload / stats)
 #include "ScriptMgr.h"
 #include "Chat.h"
 #include "ChatCommand.h"
@@ -167,9 +169,21 @@ public:
             { "bglist",  HandleWorldBgListCommand,  rbac::RBAC_PERM_COMMAND_SERVER, Console::Yes },
             { "clear",   HandleWorldClearCommand,   rbac::RBAC_PERM_COMMAND_SERVER, Console::Yes },
         };
+        static ChatCommandTable llmCommandTable =
+        {
+            { "reload", HandleLlmReloadCommand, rbac::RBAC_PERM_COMMAND_SERVER, Console::Yes },
+            { "stats",  HandleLlmStatsCommand,  rbac::RBAC_PERM_COMMAND_SERVER, Console::Yes },
+        };
+        static ChatCommandTable intentCommandTable =
+        {
+            { "stats",  HandleIntentStatsCommand,  rbac::RBAC_PERM_COMMAND_SERVER, Console::Yes },
+            { "reload", HandleIntentReloadCommand, rbac::RBAC_PERM_COMMAND_SERVER, Console::Yes },
+        };
         static ChatCommandTable pbotCommandTable =
         {
-            { "world", worldCommandTable },
+            { "world",  worldCommandTable },
+            { "llm",    llmCommandTable },
+            { "intent", intentCommandTable },
         };
         static ChatCommandTable commandTable =
         {
@@ -455,6 +469,63 @@ public:
             start = end + 1;
         }
 
+        return true;
+    }
+
+    // ---- generated speech (.pbot llm) ------------------------------------------------------------
+    //
+    // The pool is filled from outside the server: a program on the operator's machine reads
+    // `characters.pbot_llm_lines`, asks a local model for fresh Russian lines and writes them back.
+    // The world never reads that table while a bot is speaking — only here, on demand — so a slow,
+    // missing or switched-off model can never stall the world thread.
+    //
+    // One message per line: the chat handler renders an embedded newline as a single unreadable run.
+    static void SendLines(ChatHandler* handler, std::string const& block)
+    {
+        for (size_t start = 0; start <= block.size(); )
+        {
+            size_t const end = block.find('\n', start);
+            handler->SendSysMessage(block.substr(start,
+                end == std::string::npos ? std::string::npos : end - start).c_str());
+
+            if (end == std::string::npos)
+                break;
+            start = end + 1;
+        }
+    }
+
+    // .pbot llm stats — what the pool holds right now, per event.
+    static bool HandleLlmStatsCommand(ChatHandler* handler)
+    {
+        SendLines(handler, PbotSocial::DescribeGeneratedPool());
+        return true;
+    }
+
+    // .pbot llm reload — re-read the pool after the generator has added lines. Cheap (one SELECT),
+    // and the only way the world learns about new lines: it never reads the table to speak, so it
+    // cannot notice them by itself.
+    static bool HandleLlmReloadCommand(ChatHandler* handler)
+    {
+        PbotSocial::LoadGeneratedPool();
+        SendLines(handler, PbotSocial::DescribeGeneratedPool());
+        return true;
+    }
+
+    // ---- behaviour intents (.pbot intent) -------------------------------------------------------
+    //
+    // The weights are generated outside the server (see pbot_intent.h) and read into memory at boot.
+    // This is how the operator reloads them, and how one can be told whether any are loaded at all —
+    // with none, every bot is running on its own personality, which is the default and not a failure.
+    static bool HandleIntentStatsCommand(ChatHandler* handler)
+    {
+        SendLines(handler, PbotIntent::Describe());
+        return true;
+    }
+
+    static bool HandleIntentReloadCommand(ChatHandler* handler)
+    {
+        PbotIntent::LoadProfiles();
+        SendLines(handler, PbotIntent::Describe());
         return true;
     }
 

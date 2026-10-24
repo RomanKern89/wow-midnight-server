@@ -16,6 +16,7 @@
 #include "pbot_party.h" // PbotParty: group membership + level match (Phase 5)
 #include "pbot_gather.h" // PbotGather::GrantGatheringSkills (Phase 5)
 #include "pbot_equip.h"  // PbotEquip::GearUp — level-appropriate gear
+#include "pbot_flight.h"  // PbotFlight::SeedKnownNodes — the flight points a race should start with
 #include "pbot_loader.h" // PbotLoader::IsReloadPending / RequestRetireOnLoad (review CRITICAL race guard)
 #include "pbot_profession.h" // one craft per bot, so the world makes things and not only gathers them
 
@@ -443,6 +444,16 @@ Player* PbotMgr::SpawnWorldBot(uint32 mapId, Position const& pos, PbotClass clas
     // they were blind.
     PhasingHandler::OnMapChange(bot);
 
+    // Make the bot visible-to-itself in the engine's eyes.
+    //
+    // Player::CanNeverSee returns true unless this local flag is set, and only a real client ever
+    // sets it (HandlePlayerLogin / CMSG_MOVE_INIT_ACTIVE_MOVER_COMPLETE). A socket-less bot walks
+    // neither path, so CanSeeOrDetect was false for EVERY object, IsValidAttackTarget was false, and
+    // Spell::AddUnitTarget discarded every spell target after CheckTarget returned BAD_TARGETS -
+    // which is why bots "cast" without damage and fought only in melee. Measured 2026-10-23: 94% of
+    // melee swings landed, while every nuke was silently dropped.
+    bot->SetPlayerLocalFlag(PLAYER_LOCAL_FLAG_OVERRIDE_TRANSPORT_SERVER_TIME);
+
     // Level AFTER the bot is on a map, matching the order the owner-bound path uses. GiveLevel
     // fires level-change script hooks, and running those on a player with no map is a class of bug
     // not worth inviting for the sake of a few milliseconds.
@@ -477,6 +488,11 @@ Player* PbotMgr::SpawnWorldBot(uint32 mapId, Position const& pos, PbotClass clas
     // this the bot wears the level-1 starter kit no matter how high its level, and dies to mobs of
     // its own level — measured, not assumed.
     PbotEquip::GearUp(bot);
+
+    // The flight points any character of this race and level is supposed to have. Also applied on
+    // reload, in FinalizeReloadedWorldBot — a fix that only runs at creation reaches nobody once
+    // creation has stopped happening, which this codebase has now learned four separate times.
+    PbotFlight::SeedKnownNodes(bot);
 
     // Registered under an EMPTY owner guid — that is precisely what marks it as a world bot, both
     // here and in PbotAI::IsWorldBot().
@@ -788,6 +804,16 @@ bool PbotMgr::PlaceInWorldNextToOwner(Player* owner, Player* bot)
     // bot never walks that path. Skip it and the bot is blind — it can be attacked but can never
     // see anything to attack, gather or interact with.
     PhasingHandler::OnMapChange(bot);
+
+    // Make the bot visible-to-itself in the engine's eyes.
+    //
+    // Player::CanNeverSee returns true unless this local flag is set, and only a real client ever
+    // sets it (HandlePlayerLogin / CMSG_MOVE_INIT_ACTIVE_MOVER_COMPLETE). A socket-less bot walks
+    // neither path, so CanSeeOrDetect was false for EVERY object, IsValidAttackTarget was false, and
+    // Spell::AddUnitTarget discarded every spell target after CheckTarget returned BAD_TARGETS -
+    // which is why bots "cast" without damage and fought only in melee. Measured 2026-10-23: 94% of
+    // melee swings landed, while every nuke was silently dropped.
+    bot->SetPlayerLocalFlag(PLAYER_LOCAL_FLAG_OVERRIDE_TRANSPORT_SERVER_TIME);
     return true;
 }
 
@@ -824,6 +850,10 @@ void PbotMgr::TeardownLiveRecord(std::unordered_map<ObjectGuid, BotRecord>::iter
             break;
         }
     }
+
+    // Flight progress is kept behind the guid rather than in the record, so it has to be dropped
+    // by hand here or the table keeps a row per bot that ever existed.
+    PbotFlight::Forget(botGuid);
 
     // Phase 5: drop out of the owner's party BEFORE logout. A logged-out member keeps its slot,
     // so without this a squad that is dismissed and re-spawned a few times would leave the owner
@@ -944,6 +974,16 @@ bool PbotMgr::PlaceWorldBotAtSavedPosition(Player* bot)
 
     ObjectAccessor::AddObject(bot);
     PhasingHandler::OnMapChange(bot);
+
+    // Make the bot visible-to-itself in the engine's eyes.
+    //
+    // Player::CanNeverSee returns true unless this local flag is set, and only a real client ever
+    // sets it (HandlePlayerLogin / CMSG_MOVE_INIT_ACTIVE_MOVER_COMPLETE). A socket-less bot walks
+    // neither path, so CanSeeOrDetect was false for EVERY object, IsValidAttackTarget was false, and
+    // Spell::AddUnitTarget discarded every spell target after CheckTarget returned BAD_TARGETS -
+    // which is why bots "cast" without damage and fought only in melee. Measured 2026-10-23: 94% of
+    // melee swings landed, while every nuke was silently dropped.
+    bot->SetPlayerLocalFlag(PLAYER_LOCAL_FLAG_OVERRIDE_TRANSPORT_SERVER_TIME);
     return true;
 }
 
@@ -960,6 +1000,15 @@ bool PbotMgr::FinalizeReloadedWorldBot(Player* bot, WorldSession* session, uint8
     bot->SetPvP(true);
     bot->UpdatePvPState();
 
+    // Level-appropriate gear for bots that came back from the database.
+    //
+    // GearUp used to run only on the creation path, so every bot that survived a restart kept the kit
+    // it was born with - measured 2026-10-22, level-30 bots hitting for 20-100 against creatures with
+    // 3,000-1,400,000 health, and dying before they could finish a fight. This is the same lesson the
+    // bag slots and flight nodes below already carry: a fix that runs only at creation reaches nobody
+    // who already exists.
+    PbotEquip::GearUp(bot);
+
     BotRecord rec;
     rec.OwnerGuid = ObjectGuid::Empty;
     rec.BotGuid   = bot->GetGUID();
@@ -971,9 +1020,20 @@ bool PbotMgr::FinalizeReloadedWorldBot(Player* bot, WorldSession* session, uint8
     _bots.emplace(bot->GetGUID(), std::move(rec));
     _byOwner.emplace(ObjectGuid::Empty, bot->GetGUID());
 
+    // Top up bag slots on the way back in. A bot that predates bag support owns none, and its
+    // 16-slot backpack fills with quest rewards and gathered material until the engine starts
+    // refusing turn-ins outright — which is where 22 of 64 bots on this realm were.
+    uint32 const bags = PbotEquip::FillBags(bot);
+
+    // Same reasoning as the bags: the sixty bots already on this realm were created before flight
+    // existed and every one of them came back knowing a single node. Seeding here is what reaches
+    // them, because none of them will ever run the creation path again.
+    PbotFlight::SeedKnownNodes(bot);
+
     TC_LOG_INFO("scripts.bots", "PbotMgr: reloaded WORLD bot {} (class {} level {}) on map {} — "
-        "resuming where it left off.", bot->GetName(), uint32(unitClassId),
-        uint32(bot->GetLevel()), bot->GetMapId());
+        "resuming where it left off{}.", bot->GetName(), uint32(unitClassId),
+        uint32(bot->GetLevel()), bot->GetMapId(),
+        bags ? Trinity::StringFormat(", gave it {} bag(s)", bags) : std::string());
     return true;
 }
 

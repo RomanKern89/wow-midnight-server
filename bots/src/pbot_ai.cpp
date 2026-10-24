@@ -23,9 +23,16 @@
 #include "pbot_bg.h"           // battleground queue + entry (Phase 7)
 #include "pbot_quest.h"        // take/turn in quests from world questgivers
 #include "pbot_loot.h"         // loot our own kills (money, drops, quest items)
-#include "pbot_migrate.h"      // move to a new zone once this one is outgrown
+#include "pbot_migrate.h"
+#include "pbot_delivery.h"  // PbotDelivery::Tick — fetch rewards left on another map      // move to a new zone once this one is outgrown
+#include "Item.h"
+#include "ItemTemplate.h"
+#include "pbot_world_spots.h" // vetted ground to move a repeatedly stuck bot to
+#include "pbot_belongings.h" // what this bot considers worth keeping
 #include "pbot_travel.h"       // stepped long-distance movement + roam points
+#include "pbot_flight.h"       // flight paths — discovering them and using them
 #include "pbot_questgoal.h"    // where an unfinished quest is actually done
+#include "pbot_intent.h"       // what this bot is doing for the next few minutes
 #include "pbot_hearth.h"       // go home to your own people when a zone runs dry
 #include "pbot_social.h"       // bots that say things — silence is the loudest tell
 #include "pbot_group.h"        // bots that party up instead of ignoring each other
@@ -37,6 +44,7 @@
 #include "bot_rotations.h"     // BotCombatContext + Run*Rotation free functions (B.2/B.3)
 #include "Player.h"
 #include "Unit.h"
+#include "Creature.h"          // the kill tally asks the corpse whether we may loot it
 #include "Group.h"
 #include "ObjectAccessor.h"
 #include "MotionMaster.h"
@@ -49,16 +57,119 @@
 #include "SharedDefines.h"     // CLASS_*, SPELL_CAST_OK
 
 #include "StringFormat.h"      // the activity budget report
+#include "GameTime.h"          // GetGameTimeMS — the throttles below
 
 #include <algorithm>           // sorting that report by share
 #include <array>
 #include <atomic>              // maps tick in parallel threads; the tally is written from all of them
 #include <sstream>             // DescribeState (Phase 4A status report)
+#include <unordered_map>       // the travel probes below
 #include <utility>
 #include <vector>
 
 namespace
 {
+    // ---------------------------------------------------------------------------------------------
+    // Travel probes (2026-10-15). The turn-in goal is chosen inside TickTravel, and every path that
+    // declines to choose it is silent: a bot can carry finished work with its taker standing a few
+    // hundred yards away, on its own map, for a whole run — and not one line says whether the choice
+    // was ever offered, or whether it was a goal already in flight that blocked it. Naming the gate
+    // is the whole point; these lines change nothing. One a minute per bot, and only for a bot that
+    // is actually carrying finished work.
+    bool ShouldReportTravel(Player* bot)
+    {
+        uint32 complete = 0;
+        for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+        {
+            uint32 const questId = bot->GetQuestSlotQuestId(slot);
+            if (questId && bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
+                ++complete;
+        }
+
+        if (!complete)
+            return false;
+
+        static std::unordered_map<ObjectGuid, uint32> lastReport;
+        uint32 const now = GameTime::GetGameTimeMS();
+        uint32& last = lastReport[bot->GetGUID()];
+        if (last && now - last < 60000)
+            return false;
+
+        last = now;
+        return true;
+    }
+
+    // How often a bot bothers checking for things nobody will buy. Cheap, but not free — it walks
+    // every item — and a pile of unsellable junk does not appear between one second and the next.
+    constexpr uint32 BIN_INTERVAL_MS = 60000;
+
+    // How far a bot must move to count as having moved at all. Generous: a bot fighting in place or
+    // casting still shuffles a yard or two, and that is not stuck.
+    constexpr float STILL_TOLERANCE = 8.0f;
+
+    // How long it may stand perfectly still, out of combat, before being treated as stuck. Long
+    // enough that resting, waiting at a gathering node and standing at a vendor all pass.
+    constexpr uint32 STUCK_AFTER_MS = 300000;   // 5 minutes
+
+    // How many rescues in a row before the bot is moved somewhere else entirely.
+    constexpr uint8 STUCK_STREAK_BEFORE_REHOME = 2;
+
+    // A quest walk that still has this share of its distance left has not really moved. Three
+    // minutes at walking pace covers well over a thousand yards; keeping 80% of a 300-yard trip
+    // means the ground itself is refusing to be crossed.
+    constexpr float KEPT_DISTANCE_MEANS_STUCK = 0.8f;
+
+    // How much NEARER a taker has to be before a bot re-aims mid-journey (see TickTravel), and how
+    // often it may. The margin is the fix for the first version of that code: without it the bot
+    // turned aside for a destination the SAME distance away, every tick, 129,196 times in one
+    // window — cancelling its own motion each time, so it never actually went anywhere.
+    constexpr float  TURN_ASIDE_MARGIN = 50.0f;
+    constexpr uint32 TURN_ASIDE_COOLDOWN_MS = 60000;
+
+    // Throw away what the bot has judged worthless AND no vendor will accept.
+    //
+    // Deliberately not part of the vendor trip, though the vendor does it too. The case this exists
+    // for is precisely the one where the vendor trip never completes: quest items sell for zero, so
+    // CanSellItemToVendor refuses them at any price, and a bot whose bags are full of them needs
+    // town forever and is never able to fix it by going. Measured, that circuit ate a whole soak.
+    void BinUnsellable(Player* bot, uint32& cooldownMs, uint32 diff)
+    {
+        if (cooldownMs > diff)
+        {
+            cooldownMs -= diff;
+            return;
+        }
+
+        if (!PbotBelongings::NeedsRoom(bot))
+            return;
+
+        // Only charged when the walk actually happens: a bot with room pays nothing for this.
+        cooldownMs = BIN_INTERVAL_MS;
+
+        for (Item* item : PbotBelongings::Disposable(bot, PbotBelongings::Worth::Junk))
+        {
+            // Only what a vendor would refuse. Anything sellable is worth the walk — binning it
+            // would be throwing away the bot's own income.
+            // Destroying moves things; anything already shifted since the list was built is not
+            // ours to touch. Skipping this is what aborted the whole server once, in
+            // Player::_SaveInventory, with "deleted but still in world".
+            if (!PbotBelongings::StillThere(bot, item))
+                continue;
+
+            if (!bot->CanSellItemToVendor(item, item->GetCount()))
+                continue;
+
+            // Re-judged as we go: destroying drops the count, and once the pile is down to a
+            // working supply the rest stops being junk and this stops.
+            if (PbotBelongings::Judge(bot, item) != PbotBelongings::Worth::Junk)
+                continue;
+
+            TC_LOG_INFO("scripts.bots", "pbot upkeep: {} binned {} — no vendor will take it",
+                bot->GetName(), item->GetTemplate()->GetDefaultLocaleName());
+            bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+        }
+    }
+
     // Follow spacing. The SS8.3 interface carries no slot index (only the bot guid), so up-to-a-
     // handful of one owner's bots fan out deterministically by guid counter instead of stacking
     // on a single point. Stable across ticks, no per-tick state. Angles avoid 0/PI (dead behind /
@@ -283,6 +394,148 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
     _activity = Activity::Idle;
     ActivityScope const accounting{ _activity };
 
+    // In the air. Above everything, including the map-change reset below — a flight between
+    // continents changes the map mid-journey, and clearing the motion master there would drop the
+    // bot out of the sky. The engine flies it; this tick is not ours to spend.
+    //
+    // Nothing in the ladder is safe against a taxi spline: MovePoint replaces it, MotionMaster::Clear
+    // deletes it, and either leaves the bot standing wherever the flight had got to with UNIT_STATE
+    // still saying it is flying.
+    if (bot->IsInFlight())
+    {
+        _activity = Activity::Travelling;
+        _lastMapId = bot->GetMapId();   // so landing on another continent is not read as a teleport
+        return;
+    }
+
+    // Flight points are learned by going near them, which is how retail has worked since the
+    // discovery toast replaced talking to the flight master. Bots already walk and migrate; this is
+    // what turns that into a map of the world they can actually use.
+    PbotFlight::Discover(bot);
+
+    // Throw out what nobody will ever buy — ABOVE the ladder, not inside it.
+    //
+    // It costs no walk, no NPC and almost no time, and its position is the whole point. Placed down
+    // beside the town errands it was never reached: a bot whose bags are full is also a bot that
+    // keeps trying to gather, and gather claims the tick first. Measured, Perrin spent its day on
+    // "saw 4 chests within 80y and could open none" while carrying 101 copies of one worthless item.
+    //
+    // That is the FIFTH time in this codebase that necessary work was hidden behind a control path
+    // which stopped being taken — after bot creation, after the decision ladder's busiest branch,
+    // after an NPC visit a full log prevented, and after a vendor trip that could never complete.
+    // Housekeeping belongs where nothing can gate it.
+    BinUnsellable(bot, _binCooldownMs, diff);
+
+    // Stuck watchdog. Also above the ladder, and for the same reason: a bot that cannot move is a
+    // bot that cannot reach any of the things below.
+    //
+    // A position the pathfinder refuses to leave — under the terrain, inside geometry, at a z of
+    // zero — is invisible to every module here. Each one issues its move, the engine rejects the
+    // spline as too long, and the module tries again on the next tick, forever. Measured: one
+    // level-18 bot sitting at z = 0.0000000034 on map 530 produced 38,264 rejected splines, 83% of
+    // every movement failure on the realm, and of course handed in nothing the whole time.
+    //
+    // Deliberately not a movement check but a POSITION check: asking the motion generator whether
+    // it is busy gets a cheerful yes from a generator whose spline never launched. Where the bot
+    // actually is, compared with where it actually was, cannot lie.
+    // Whether the bot is TRYING to go anywhere right now.
+    //
+    // Recovery is for a bot that cannot move, not for one that is standing still on purpose: at the
+    // auctioneer, between town errands, or waiting out a cooldown there is no movement intent at all,
+    // and "recovering" such a bot yanks it away from its business. Measured 2026-10-21 on the first
+    // four cases the new watcher captured: two were bots idling at the Booty Bay auction house with
+    // no goal of any kind - not stuck, just shopping.
+    bool const hasIntent = _hasGoal || !_questGiverGuid.IsEmpty() || !_gatherNodeGuid.IsEmpty()
+        || !_lootCorpseGuid.IsEmpty() || _upkeep.hasTownGoal || _workbenchMs > 0;
+
+    if (bot->GetExactDist(&_lastSeenPos) > STILL_TOLERANCE || bot->IsInCombat())
+    {
+        _lastSeenPos = bot->GetPosition();
+        _stillMs = 0;
+        _stuckStreak = 0;   // moving again: whatever it was, it is over
+    }
+    else if (!hasIntent)
+    {
+        // Idle by design, not stuck: forget the stillness and leave the bot where it is.
+        _stillMs = 0;
+        _stuckStreak = 0;
+    }
+    else if ((_stillMs += diff) >= STUCK_AFTER_MS)
+    {
+        _stillMs = 0;
+        _lastSeenPos = bot->GetPosition();
+
+        TC_LOG_INFO("scripts.bots", "pbot: {} has not moved for {} minutes at ({:.0f}, {:.0f}, "
+            "{:.1f}) on map {} — recovering it", bot->GetName(), STUCK_AFTER_MS / 60000,
+            bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+
+        bot->GetMotionMaster()->Clear();
+
+        // FIRST: try lifting it onto the ground where it already is.
+        //
+        // This is the actual defect, not a workaround for it. Both bots that ate a four-hour soak
+        // were UNDER THE TERRAIN — one 21 to 43 yards below the nearest ground, the other 6 — and
+        // the navmesh runs above them, so no path could be built and every module's move was
+        // rejected in turn. Put the bot back on the surface and it simply carries on with what it
+        // was doing, in the place it chose, with none of its plans thrown away.
+        //
+        // Teleporting somewhere else is the fallback for when even that is impossible.
+        Position onGround = bot->GetPosition();
+        if (!PbotTravel::IsStandable(bot, onGround) && PbotTravel::SnapToGround(bot, onGround))
+        {
+            bot->TeleportTo(bot->GetMapId(), onGround.GetPositionX(), onGround.GetPositionY(),
+                onGround.GetPositionZ(), bot->GetOrientation());
+
+            TC_LOG_INFO("scripts.bots", "pbot: {} was under the terrain on map {} — lifted it back "
+                "onto the ground", bot->GetName(), bot->GetMapId());
+
+            _lastSeenPos = onGround;
+            return;
+        }
+
+        // Going home is the right answer ONCE. When it keeps happening, home is the trap.
+        //
+        // Measured over a four-hour soak: the watchdog fired 149 times, and 98 of those were two
+        // bots — Ondrel and Delwin, 49 each, one every five minutes for the entire run. Recovery
+        // put them back on their home anchor, the anchor was itself a place the pathfinder will
+        // not move them from, and five minutes later they were stuck again. A rescue that returns
+        // the victim to the accident is not a rescue.
+        //
+        // So the second time, the bot moves house: PbotWorldSpots holds the vetted ground the
+        // population system uses to place bots in the first place, matched to level so the bot
+        // arrives somewhere it can actually live.
+        if (++_stuckStreak >= STUCK_STREAK_BEFORE_REHOME)
+        {
+            _stuckStreak = 0;
+
+            PbotWorldSpots::Spot spot;
+            if (PbotWorldSpots::PickForLevel(bot->GetLevel(), spot)
+                && bot->TeleportTo(spot.MapId, spot.Pos.GetPositionX(), spot.Pos.GetPositionY(),
+                                   spot.Pos.GetPositionZ(), spot.Pos.GetOrientation()))
+            {
+                _home = spot.Pos;
+                _homeMapId = spot.MapId;
+
+                TC_LOG_INFO("scripts.bots", "pbot: {} kept getting stuck at home — moved it to "
+                    "zone {} on map {}", bot->GetName(), spot.ZoneId, spot.MapId);
+            }
+        }
+        else if (!PbotHearth::GoHome(bot, _home, _homeMapId))
+        {
+            bot->TeleportTo(_homeMapId, _home.GetPositionX(), _home.GetPositionY(),
+                _home.GetPositionZ(), _home.GetOrientation());
+        }
+
+        _hasGoal = false;
+        _goalIsTurnIn = false;
+        _questGiverGuid.Clear();
+        _gatherNodeGuid.Clear();
+        _lootCorpseGuid.Clear();
+        _upkeep.vendorGuid.Clear();
+        _upkeep.hasTownGoal = false;
+        return;
+    }
+
     // A movement order SURVIVES a teleport to another map: the generator keeps steering toward the
     // coordinates it was given, which now denote a completely different place. Bots teleported into
     // Warsong Gulch kept walking toward a wander point back in Elwynn Forest — both teams drifting
@@ -369,6 +622,66 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
     else
         _repositionMs = 0;
 
+    // Did the last fight end in a corpse of ours? Counted, because "do the bots actually kill things"
+    // had no number anywhere: no log line records a kill, so the only evidence was indirect and the
+    // criterion could not be closed. The engine's own answer to "who may loot this" is what tap and
+    // group credit are built on, so it is the honest test rather than a guess from damage done.
+    if (!_lastVictimGuid.IsEmpty())
+    {
+        Unit* killed = ObjectAccessor::GetUnit(*bot, _lastVictimGuid);
+        if (!killed || !killed->IsAlive())
+        {
+            Creature const* corpse = (killed && killed->GetTypeId() == TYPEID_UNIT)
+                ? killed->ToCreature() : nullptr;
+
+            if (corpse)
+            {
+                // BOTH tests are logged, because this project has already been burned once by
+                // trusting one engine gate on a bot with no socket (IsValidAttackTarget says no to
+                // every creature in the world for a client-less player). If both are false for every
+                // corpse then the bots genuinely are not killing anything; if only one is false, the
+                // counter is the thing that is wrong and the log says which.
+                //
+                // isTappedBy asks "was this corpse tapped by me or my group" — the same credit that
+                // decides loot rights, so it is the engine's own answer to "did this fight involve me".
+                bool const lootOk = bot->isAllowedToLoot(corpse);
+                bool const tappedOk = corpse->isTappedBy(bot);
+
+                if (lootOk || tappedOk)
+                {
+                    ++_kills;
+
+                    // Hand the body straight to the loot module, NOW.
+                    //
+                    // Waiting for PbotLoot's own 3-second scan is what let most kills rot: measured
+                    // 132 kills against 31 loots (23%), and two suspected causes were ruled out with
+                    // their own counters — "it was fighting" (0 corpses ever found beside a fighting
+                    // bot) and "loot rights" (adding isTappedBy changed nothing). What is left is
+                    // simply that the bot walks off before the timer notices. The corpse is here and
+                    // we are still in range, so there is nothing to wait for.
+                    // Queue the body, and only take the current slot if it is free — overwriting a
+                    // corpse the bot is already walking to is what lost most of them.
+                    PbotLoot::NoteCorpse(bot, corpse->GetGUID());
+                    if (_lootCorpseGuid.IsEmpty())
+                        _lootCorpseGuid = corpse->GetGUID();
+                    _lootCooldownMs = 0;
+                    _lootWalkMs = 0;
+
+                    TC_LOG_INFO("scripts.bots", "pbot kill: {} killed entry {} (kills {})",
+                        bot->GetName(), corpse->GetEntry(), _kills);
+                }
+                else
+                {
+                    TC_LOG_INFO("scripts.bots", "pbot fight: {} ended a fight, corpse entry {} not "
+                        "ours (loot={} tapped={})", bot->GetName(), corpse->GetEntry(),
+                        lootOk, tappedOk);
+                }
+            }
+
+            _lastVictimGuid.Clear();
+        }
+    }
+
     // Already fighting something, or something is fighting us — that outranks every other concern.
     Unit* target = bot->GetVictim();
     if (!target || !target->IsAlive())
@@ -423,6 +736,16 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
         PbotSocial::OnLevelUp(bot, _speakCooldownMs);
     _lastKnownLevel = bot->GetLevel();
 
+    // A refusal is only ever true of the place it happened, and this set never expired. Most of what
+    // lands in it is a quest the bot cannot finish where it stands — a taker on another continent —
+    // which stops being true the moment the bot arrives on that continent. Carrying the refusal
+    // across would make the trip pointless and the bot would stand next to the taker doing nothing.
+    if (_lastKnownMapId != bot->GetMapId())
+    {
+        _lastKnownMapId = bot->GetMapId();
+        _refusedQuests.clear();
+    }
+
     PbotSocial::TickChatter(bot, _speakCooldownMs, diff);
     PbotGroup::Tick(bot, _partyCooldownMs, diff);
 
@@ -436,10 +759,51 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
     // carrying 263 finished quests and delivering two or three in forty minutes, because the takers
     // were all continents behind them. The cheapest way to stop the pile growing is to not walk away
     // from the counter.
-    Position deliverable;
-    bool const oweDeliveries = PbotQuestGoal::FindTurnIn(bot, deliverable);
+    // ANY finished work whose taker is on this map, not just work within walking range this tick.
+    //
+    // This asked FindTurnIn, which stops at MAX_TURN_IN_DISTANCE. A bot holding sixteen completed
+    // quests whose takers stood 1,500 yards away therefore reported "nothing owed" and moved
+    // continent — converting work that was merely far into work that is unreachable forever.
+    // Measured on the live realm: of 282 completed-undelivered quests, 188 had their taker on a map
+    // the bot was no longer on, against 36 that were genuinely in range and should have been walked
+    // to. The guard was answering a different question from the one it was asked.
+    // Nothing to deliver HERE, but something waiting on another map? Go and collect it, before
+    // considering a move for level reasons. This is the return half of the journey the bot already
+    // made outbound: it walked away from earned rewards, and without this nothing ever brings it
+    // back. A player flies home for the same reason.
+    // Gated on "nothing I would actually walk to", not "nothing on this map". The unbounded check
+    // belongs to the migration guard below, where the question is whether leaving would strand
+    // something; here the question is whether staying achieves anything.
+    // The cross-map lift is consulted ALWAYS, not only when nothing walkable exists.
+    //
+    // The old gate read `if (!FindTurnIn(...) && PbotDelivery::Tick(...))`, so a single taker within
+    // 600 yards switched delivery off entirely. Measured: enders sit on the bot's OWN map but 2000+
+    // yards away (Mountaineer Stormpike at (-4818,-2696) while Kessa stood at (-5272,-513) — 2230
+    // yards), FindTurnIn refuses anything past 600, and the bot never went — it is not that the NPC is
+    // missing, it is that nobody ever drove the bot to it. PbotDelivery makes its own decision
+    // (FindRemoteTurnIn returns false when everything is walkable, and the trip threshold applies), so
+    // consulting it unconditionally cannot send a bot away from work it can already reach.
+    // Standing beside the taker with finished work, nothing else may take this tick.
+    bool const takerInReach = PbotQuest::HasTakerInReach(bot);
 
-    if (!oweDeliveries && PbotMigrate::Tick(bot, _migrateCooldownMs, diff, _home, _homeMapId))
+    if (!takerInReach && PbotDelivery::Tick(bot, _deliveryCooldownMs, diff, _home, _homeMapId))
+    {
+        _chaseTargetGuid.Clear();
+        _repositionMs = 0;
+        _gatherNodeGuid.Clear();
+        _gatherWaitMs = 0;
+        _questGiverGuid.Clear();
+        _lootCorpseGuid.Clear();
+        _upkeep.vendorGuid.Clear();
+        _upkeep.hasTownGoal = false;
+        _bgState.HasTarget = false;
+        _hasGoal = false;
+        _goalIsTurnIn = false;
+        return;
+    }
+
+    if (!PbotQuestGoal::HasDeliverableOnMap(bot)
+        && PbotMigrate::Tick(bot, _migrateCooldownMs, diff, _home, _homeMapId))
     {
         _chaseTargetGuid.Clear();
         _repositionMs = 0;
@@ -450,6 +814,29 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
         _upkeep.vendorGuid.Clear();
         _upkeep.hasTownGoal = false;   // a destination on the old map means nothing here
         _bgState.HasTarget = false;
+        return;
+    }
+
+    // The arbiter: what is this bot doing for the next few minutes?
+    //
+    // Combat has had its turn above, and so has the cross-map lift. From here the rest of this
+    // function is a set of OPTIONS rather than a fixed order, and the one option promoted above them
+    // is delivering work that is already finished — ahead of looting, hunting, gathering and the
+    // whole town errand. Measured, the fixed order is why a queue of ~266 finished quests sat flat
+    // for eight hours while bots kept walking to objectives they had not finished.
+    //
+    // Every transition is logged: this is the measurement channel for the intent weights, the same
+    // way "pbot travel:" lines are for the travel ladder.
+    PbotIntent::Kind const wasIntent = _intent;
+    _intent = PbotIntent::Decide(bot, _intent, _intentCooldownMs, diff);
+
+    if (_intent != wasIntent)
+        TC_LOG_INFO("scripts.bots", "pbot intent: {} is now {}", bot->GetName(),
+            PbotIntent::Name(_intent));
+
+    if (_intent == PbotIntent::Kind::DeliverFinished && TrySetOutForTurnIn(bot))
+    {
+        _activity = Activity::Travelling;
         return;
     }
 
@@ -483,15 +870,71 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
         return;
     }
 
-    // Loot before looking for the next fight. Deliberately ahead of the hunt: in a mob-dense zone
-    // the hunt always finds something and returns, so a bot that looted afterwards would never
-    // loot at all — it would leave a trail of full corpses behind it, which is both un-player-like
-    // and fatal to every "collect N of X" quest objective.
+    // Loot BEFORE anything that walks away from it — including a journey already in flight.
+    //
+    // Measured: 101 kills produced only 15 loots (15%), because this rung sits below the travel gate
+    // and a bot with a goal in flight simply walks off its own corpses. Looting is the one errand that
+    // is a consequence of what the bot just did rather than a new decision, and it is measured at ~0%
+    // of the day's ticks — so lifting it above the gate cannot re-create the journey oscillation the
+    // gate exists to stop.
     if (PbotLoot::Tick(bot, _lootCorpseGuid, _lootCooldownMs, _lootWalkMs, diff))
     {
         _activity = Activity::Looting;
         return;
     }
+
+    // A journey already under way owns the bot's feet until it arrives or gives up.
+    //
+    // This is the standing answer to the "carried it to the objective" lines — 468 of them in one
+    // run, which is by far the loudest non-human thing the population does: from the outside a bot
+    // that is teleported to its objective looks exactly like a player teleporting.
+    //
+    // What the measurement showed: a bot told to walk 42 yards to a taker ended 58 yards away after
+    // 180 seconds, with no combat and no failed movement order; and a trace of its own distance read
+    // 73 -> 66 -> 73. That is not a bot standing still and not a bot the navmesh refused — it is a
+    // bot being pulled two ways. Everything below this line is an ERRAND, and every errand issues
+    // its own MovePoint: laid over the journey's hop, it turns a walk into a wander between two
+    // points a few yards apart, and at the end of the budget the goal is teleported rather than
+    // reached. 21% of the day is already spent "travelling" while the queue of finished work does
+    // not move, which is what competing orders look like in the activity budget.
+    //
+    // The workbench rung below has had precisely this protection for precisely this reason
+    // ("everything below this line would otherwise send the bot somewhere else before it arrived").
+    // The journey itself simply never got it.
+    //
+    // Combat stays ABOVE this line and still wins: a bot attacked on the way stops and fights, then
+    // carries on. Resting, the cross-map reward lift and moving house are decided above it too, as
+    // before. What is skipped here is only an errand that would have STARTED.
+    if (_hasGoal)
+    {
+        if (TickTravel(bot, diff))
+        {
+            _activity = Activity::Travelling;
+            return;
+        }
+    }
+
+    // A bot with no kit left goes to the repairer BEFORE it goes hunting.
+    //
+    // The measured reason, and it is an ORDERING defect rather than a missing feature: the town
+    // errand sits BELOW hunt and gather in this ladder, so a bot that is always fighting never
+    // reaches it. Kaelen (level 24, 1 478 994 copper, 16 of 16 equipped items at 0%) had NOT ONE
+    // "pbot upkeep" line in a whole window — its entire trace was retreat at 43%, retreat at 34%,
+    // retreat at 27%, heal, the same fight again, and then death; 59 of them. Repair itself is proven
+    // (Ithric: "repaired 9 items for 9, purse 984953, gear now 100%"); these bots simply never got
+    // there, because the hunt rung above kept claiming every tick.
+    //
+    // Gated on having money to pay, so this cannot become a walk in a circle to a repairer it cannot
+    // afford: the bots with an empty purse keep the old order and their own, different problem.
+    if (!takerInReach && PbotUpkeep::GearNeedsRepair(bot) && bot->GetMoney() > 0
+        && PbotUpkeep::Tick(bot, _upkeep, _home, _homeMapId, diff))
+    {
+        _activity = Activity::Upkeep;
+        return;
+    }
+
+    // Looting now runs ABOVE the travel gate (see the note there): it is the one errand that follows
+    // from what the bot just did, and leaving it here meant 85% of its own kills were walked away from.
 
     // Both searches below walk grid cells, so they are rate limited rather than run every tick
     // (see _huntCooldownMs). Everything after them — gathering and wandering — is cheap and still
@@ -518,8 +961,36 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
         // Otherwise pick a fair fight from the local wildlife, as far off as this bot cares to look.
         // An aggressive one crosses the clearing for a kill; a timid one only fights what walks up
         // to it, which over an hour is a visibly different player.
+        //
+        // ...but idle hunting does NOT outrank walking to a quest objective, and getting that
+        // ordering wrong is what stopped the bots questing at all. Combat sits above travel in this
+        // ladder, and in a living world there is nearly always something fightable within 36 to 84
+        // yards — so the tick ended here, every time, and the travel step below was simply never
+        // reached. Measured: 45% of all ticks went to fighting while 352 of 362 quests in progress
+        // had not advanced a single objective, and the targets were 200 yards away and further.
+        //
+        // A player with a quest walks to the quest. They fight what attacks them on the way — which
+        // still happens, because a bot already in combat never reaches this code — but they do not
+        // stop for every boar between here and the objective.
+        //
+        // Deliberately narrow: only when the bot HAS an unfinished kill objective it can act on.
+        // With nothing to walk to, hunting is exactly the right thing to be doing.
+        // The test is "is there somewhere to GO", not "is there work outstanding", and the
+        // difference is the whole safety of this change. A bot whose objectives are all on another
+        // continent has work outstanding and nowhere to walk: told to stop hunting it would simply
+        // stand in a field forever, which is worse than the problem being fixed.
+        Position objective;
+        bool const somewhereToBe = PbotQuestGoal::Find(bot, objective);
+
         float const huntRange = PbotPersonality::Scale(self.Aggression, PbotAutonomy::SEARCH_RANGE, 0.6f, 1.4f);
-        if (Unit* prey = PbotAutonomy::FindTarget(bot, huntRange))
+
+        // Somewhere to be: fight only what the quest names, and let the travel step below carry the
+        // bot there. Nowhere to be: fight anything fair, which is exactly right for a bot with no
+        // errand to run.
+        Unit* prey = somewhereToBe ? PbotAutonomy::FindQuestTarget(bot, huntRange)
+                                   : PbotAutonomy::FindTarget(bot, huntRange);
+
+        if (prey)
         {
             bool const ranged = ClassIsRanged(bot->GetClass());
             bot->Attack(prey, /*meleeAttack*/ !ranged);
@@ -535,7 +1006,7 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
     //
     // Whether they bother at all is character: some players stop for every node, others walk past
     // ore their whole career. Gated on greed so both kinds exist.
-    if (self.Greed >= MIN_GREED_TO_GATHER
+    if (!takerInReach && self.Greed >= MIN_GREED_TO_GATHER
         && PbotGather::Tick(bot, _gatherNodeGuid, _gatherCooldownMs, _gatherWaitMs, diff))
     {
         _activity = Activity::Gathering;
@@ -544,7 +1015,7 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
 
     // Town business outranks questing: a bot with full bags cannot pick up a single quest item, so
     // going shopping first is not a detour, it is what makes the next quest possible at all.
-    if (PbotUpkeep::Tick(bot, _upkeep, _home, _homeMapId, diff))
+    if (!takerInReach && PbotUpkeep::Tick(bot, _upkeep, _home, _homeMapId, diff))
     {
         _activity = Activity::Upkeep;
         return;
@@ -618,7 +1089,7 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
     // and before wandering because "walk to the exclamation mark" IS the walk a player would make —
     // it replaces aimless wandering with wandering that has a reason.
     if (PbotQuest::Tick(bot, _questGiverGuid, _questCooldownMs, _questWalkMs, _speakCooldownMs,
-        _refusedQuests, diff))
+        _refusedQuests, _pruneCooldownMs, diff))
     {
         _activity = Activity::Questing;
         return;
@@ -636,6 +1107,49 @@ void PbotAI::UpdateAutonomous(Player* bot, uint32 diff)
     PbotAutonomy::Wander(bot, anchor);
 }
 
+bool PbotAI::TrySetOutForTurnIn(Player* bot)
+{
+    // Nothing to decide while the bot is already on its way somewhere, or resting between journeys.
+    if (_hasGoal || _goalCooldownMs)
+        return false;
+
+    Position taker;
+    if (!PbotQuestGoal::FindTurnIn(bot, taker))
+        return false;
+
+    // Only takers within WALKING range are promoted here.
+    //
+    // FindTurnIn also offers spots further away when a flight path could reach them, which is right
+    // for a goal the bot chooses for itself — it will fly most of the way and walk the rest. It is
+    // wrong for this promoted path, because promoting the GOAL does not promote the LIFT: measured,
+    // those goals became doomed marches (5 % of 8,000 yards in 180 seconds) that ended in the
+    // give-up teleport — which is where 468 "carried it to the objective" came from, entirely without
+    // combat and with the pathfinder working.
+    //
+    // Out-of-reach work belongs to PbotDelivery, which runs earlier in the ladder and knows how to
+    // get there by air. So this declines and lets the ladder fall through to it.
+    if (bot->GetExactDist(&taker) > PbotQuestGoal::MAX_TURN_IN_DISTANCE)
+        return false;
+
+    _goal = taker;
+    _hasGoal = true;
+    _goalIsQuest = true;
+    _goalIsTurnIn = true;
+    _goalStartDist = bot->GetExactDist(&_goal);
+    _goalMs = 0;
+    _goalCombatMs = 0;
+    _noQuestMs = 0;
+    PbotTravel::ResetHops(bot);   // this journey's count, not the previous one's
+
+    // The reward leg, and for most of this project's life the only leg of the ladder with no voice at
+    // all. Setting out for a reward is a rare, meaningful event, exactly like setting out for an
+    // objective, so it is logged unthrottled.
+    TC_LOG_INFO("scripts.bots", "pbot travel: {} SET OUT to hand in finished work — {:.0f}y away "
+        "on map {}", bot->GetName(), _goalStartDist, bot->GetMapId());
+
+    return true;
+}
+
 bool PbotAI::TickTravel(Player* bot, uint32 diff)
 {
     PbotPersonality::Traits const& self = PbotPersonality::Of(bot->GetGUID());
@@ -645,16 +1159,140 @@ bool PbotAI::TickTravel(Player* bot, uint32 diff)
     else
         _goalCooldownMs = 0;
 
+    // Delivering finished work outranks an objective the bot has merely set out for.
+    //
+    // This is the defect the travel probes named: while a goal was in flight the turn-in was never
+    // even consulted — "a goal is ALREADY in flight" was logged 19–24 times against 13–16 times the
+    // decision was reached at all — and the queue of finished work sat flat at ~266 for eight hours
+    // while bots walked to quest objectives they had not finished.
+    //
+    // Three guards, and the first two are not caution — they are the fix for what the first version of
+    // this did. It turned aside for a taker the SAME distance away that it was already walking to
+    // (236y vs 236y), every tick, 129,196 times in one window, clearing its own motion master each
+    // time: a bot that cancels its own order and reissues it never goes anywhere. So:
+    //   - never turn aside from a hand-in trip already under way (there is nothing nearer than the
+    //     thing you are already doing);
+    //   - the new taker must be NEARER BY A REAL MARGIN, not by noise;
+    //   - and at most once a minute, so a bot cannot re-aim itself in a loop.
+    if (_hasGoal && _goalIsQuest && !_goalIsTurnIn)
+    {
+        if (_turnAsideMs > diff)
+            _turnAsideMs -= diff;
+        else
+        {
+            Position taker;
+            if (PbotQuestGoal::FindTurnIn(bot, taker))
+            {
+                float const currentDist = bot->GetExactDist(&_goal);
+                float const takerDist = bot->GetExactDist(&taker);
+
+                if (takerDist + TURN_ASIDE_MARGIN < currentDist)
+                {
+                    _goal = taker;
+                    _goalIsTurnIn = true;
+                    _goalStartDist = takerDist;
+                    _goalMs = 0;
+        _goalCombatMs = 0;
+                    PbotTravel::ResetHops(bot);
+                    _turnAsideMs = TURN_ASIDE_COOLDOWN_MS;
+                    PbotMount::Dismount(bot);
+                    bot->GetMotionMaster()->Clear();
+
+                    TC_LOG_INFO("scripts.bots", "pbot travel: {} turned aside from its objective — a "
+                        "taker for finished work stands {:.0f}y off, against {:.0f}y it was walking",
+                        bot->GetName(), takerDist, currentDist);
+
+                    return true;
+                }
+            }
+        }
+    }
+
     if (_hasGoal)
     {
+        if (ShouldReportTravel(bot))
+            TC_LOG_INFO("scripts.bots", "pbot travel gate: {} — a goal is ALREADY in flight ({:.0f}y "
+                "away, {:.0f}s of budget spent, quest goal {}) so the turn-in is never consulted",
+                bot->GetName(), bot->GetExactDist(&_goal), _goalMs / 1000.0, _goalIsQuest ? "yes" : "no");
+
         // Same budget as everything else that walks somewhere: a destination the pathfinder cannot
         // reach must not become a life sentence. Without this the bot re-issues a failing move
         // every tick and reports "busy", so wandering, hunting and everything else never runs.
         _goalMs += diff;
+        if (bot->IsInCombat())
+            _goalCombatMs += diff;
         if (_goalMs > PBOT_GOAL_WALK_BUDGET_MS)
         {
+            // Say how far short it stopped. Two behaviour changes in a row shifted the time budget
+            // and moved objective progress not at all — which means the chain breaks somewhere
+            // between choosing a destination and standing on it, and nothing in this loop has ever
+            // said which. A number here settles it: still 900 yards out means the budget is simply
+            // too small for the distances involved; 30 yards out means it arrives and the work is
+            // not there.
+            float const remaining = bot->GetExactDist(&_goal);
+
+            // Almost no ground covered means this place cannot be walked out of, and no amount of
+            // retrying will change that. Measured: two bots spent the whole run in Thunder Bluff and
+            // Orgrimmar closing 15 yards per three minutes — a fiftieth of walking pace — because a
+            // capital is mesas, lifts and tunnels that the navmesh does not join up. Cadoc, standing
+            // in open country, reached its objectives and picked new ones normally.
+            //
+            // So: carry it there, exactly as the turn-in lift does for a reward it cannot walk to
+            // (41 attempts, 40 deliveries). A player in a capital takes the lift down; a bot has no
+            // lift, and crawling at a fiftieth of pace is not a behaviour worth preserving.
+            bool const wentNowhere = _goalIsQuest && _goalStartDist > 0.0f
+                && remaining > _goalStartDist * KEPT_DISTANCE_MEANS_STUCK;
+
+            if (wentNowhere)
+            {
+                // No teleport to the objective.
+                //
+                // Carrying the bot there was the loudest non-human thing the population did: from
+                // outside it is a player blinking across the map, and it still measured ~13 an hour.
+                // A player who cannot walk somewhere does not teleport - they drop that errand and do
+                // something else, and if they are genuinely wedged the watchdog lifts them onto the
+                // ground they are standing on.
+                //
+                // So: write the destination off, say so, and let the goal go. The bot then chooses
+                // again from where it actually is.
+                TC_LOG_INFO("scripts.bots", "pbot goal: {} could not walk out of where it was "
+                    "({:.0f} of {:.0f} yards in {}s; combat {}s of it, {} dead movement orders, "
+                    "{} hops accepted, {}y short) - giving up that objective",
+                    bot->GetName(), _goalStartDist - remaining, _goalStartDist,
+                    PBOT_GOAL_WALK_BUDGET_MS / 1000, _goalCombatMs / 1000,
+                    PbotTravel::FailedHops(bot), PbotTravel::HopsIssued(bot), remaining);
+
+                PbotQuestGoal::MarkUnreachable(bot->GetMapId(), _goal);
+
+                // The usual reason a bot cannot walk out is that it is UNDER the terrain: the
+                // navmesh runs above it, so every move is rejected. Lifting it onto the ground it
+                // is already standing on is the same correction the stuck watchdog makes, and it
+                // keeps the bot in the place it chose - unlike carrying it across the map to the
+                // objective, which was visible from outside and measured ~13 an hour.
+                Position onGround = bot->GetPosition();
+                if (!PbotTravel::IsStandable(bot, onGround) && PbotTravel::SnapToGround(bot, onGround))
+                {
+                    bot->TeleportTo(bot->GetMapId(), onGround.GetPositionX(), onGround.GetPositionY(),
+                        onGround.GetPositionZ(), bot->GetOrientation());
+
+                    TC_LOG_INFO("scripts.bots", "pbot goal: {} was under the terrain - lifted onto the "
+                        "ground where it stood (map {})", bot->GetName(), bot->GetMapId());
+
+                    _lastSeenPos = onGround;
+                }
+            }
+            else
+            {
+                TC_LOG_INFO("scripts.bots", "pbot goal: {} gave up {} after {}s, still {:.0f} yards away "
+                    "({} hops accepted)",
+                    bot->GetName(), _goalIsQuest ? "a quest objective" : "a roam",
+                    PBOT_GOAL_WALK_BUDGET_MS / 1000, remaining, PbotTravel::HopsIssued(bot));
+            }
+
             _hasGoal = false;
+        _goalIsTurnIn = false;
             _goalMs = 0;
+        _goalCombatMs = 0;
             _goalCooldownMs = PBOT_GOAL_RETRY_MS;
             PbotMount::Dismount(bot);
             return false;
@@ -672,12 +1310,37 @@ bool PbotAI::TickTravel(Player* bot, uint32 diff)
 
         PbotMount::Dismount(bot);   // arrived
 
+        // Arriving at a HAND-IN is the moment the quest module must act, not "after the next
+        // cooldown". It sits below gathering and town errands in the ladder, so a bot that walked
+        // hundreds of yards to a taker and then found a herb or a repairer first would hand in
+        // nothing — measured, 58 "SET OUT to hand in" ended in 3 hand-ins. Clearing its gate here
+        // makes the module run on the very next tick; it still decides for itself whether the taker
+        // is in reach (FindGiver, 120y) and walks the last few yards (MoveToGiver).
+        if (_goalIsTurnIn)
+        {
+            // Report the state of the world at this exact spot before the quest module acts on it.
+            // The regular probe runs once a minute wherever the bot is, so it almost never fires at
+            // the taker; this one does, which is what makes "givers in range 0" interpretable.
+            PbotQuest::ReportGiverSearchNow(bot);
+
+            _questCooldownMs = 0;
+            _questWalkMs = 0;
+            _questGiverGuid.Clear();
+        }
+
         // Arrived (or the path gave out). Make this the new home: the point of the journey was to
         // live somewhere else for a while, and leaving the anchor behind would drag the bot back.
+        if (_goalIsQuest)
+            TC_LOG_INFO("scripts.bots", "pbot travel: {} ARRIVED on the journey it set out on "
+                "(map {}, {:.0f}y short of the recorded spot)", bot->GetName(), bot->GetMapId(),
+                bot->GetExactDist(&_goal));
+
         _home = bot->GetPosition();
         _homeMapId = bot->GetMapId();
         _hasGoal = false;
+        _goalIsTurnIn = false;
         _goalMs = 0;
+        _goalCombatMs = 0;
 
         // Linger longer after reaching a quest objective than after a plain roam — the bot is now
         // standing among the creatures the quest wants, and the hunt logic needs time to work.
@@ -686,7 +1349,23 @@ bool PbotAI::TickTravel(Player* bot, uint32 diff)
     }
 
     if (_goalCooldownMs)
+    {
+        if (ShouldReportTravel(bot))
+            TC_LOG_INFO("scripts.bots", "pbot travel gate: {} — goal cooldown still has {:.0f}s left, "
+                "so the turn-in is not consulted", bot->GetName(), _goalCooldownMs / 1000.0);
         return false;
+    }
+
+    if (ShouldReportTravel(bot))
+    {
+        Position offered;
+        bool const can = PbotQuestGoal::FindTurnIn(bot, offered);
+        std::string const answer = can
+            ? Trinity::StringFormat("YES, a taker {:.0f}y away", bot->GetExactDist(&offered))
+            : std::string("NO");
+        TC_LOG_INFO("scripts.bots", "pbot travel probe: {} map {} — the turn-in decision IS reached "
+            "with a clear goal; offered {}", bot->GetName(), bot->GetMapId(), answer);
+    }
 
     // FINISHED work first, before going looking for more. A player who has killed the eight wolves
     // walks back and collects the reward; only then do they ask what else needs doing.
@@ -696,13 +1375,8 @@ bool PbotAI::TickTravel(Player* bot, uint32 diff)
     // The log fills, the soft cap stops new quests being taken, and the bot spends the rest of its
     // life carrying finished errands it never delivers. Nobody chases the reward harder than the
     // person who already earned it, so this one is not gated on diligence.
-    if (PbotQuestGoal::FindTurnIn(bot, _goal))
-    {
-        _hasGoal = true;
-        _goalIsQuest = true;
-        _noQuestMs = 0;
+    if (TrySetOutForTurnIn(bot))
         return true;
-    }
 
     // An unfinished quest is a real reason to be somewhere; roaming is what a player does when
     // they have none. A diligent bot always goes and does the quest; a slack one often cannot be
@@ -710,9 +1384,18 @@ bool PbotAI::TickTravel(Player* bot, uint32 diff)
     if (roll_chance(int32(PbotPersonality::Scale(self.Diligence, 100.0f, 0.35f, 1.0f)))
         && PbotQuestGoal::Find(bot, _goal))
     {
+        // The other half of the measurement: how far the journey was when it began. Paired with the
+        // give-up line above it says whether a bot covers ground at all — "set out 900 yards away,
+        // gave up 880 yards away" and "set out 900, gave up 40" are different defects entirely.
+        TC_LOG_INFO("scripts.bots", "pbot goal: {} set out for a quest objective {:.0f} yards away",
+            bot->GetName(), bot->GetExactDist(&_goal));
+
         _hasGoal = true;
+        _goalIsTurnIn = false;
         _goalIsQuest = true;
+        _goalStartDist = bot->GetExactDist(&_goal);
         _noQuestMs = 0;
+        PbotTravel::ResetHops(bot);
         return true;
     }
 
@@ -726,6 +1409,7 @@ bool PbotAI::TickTravel(Player* bot, uint32 diff)
         if (PbotHearth::GoHome(bot, _home, _homeMapId))
         {
             _hasGoal = false;
+        _goalIsTurnIn = false;
             _goalCooldownMs = PBOT_GOAL_QUEST_LINGER_MS;   // settle in before deciding anything
             return true;
         }
@@ -734,7 +1418,9 @@ bool PbotAI::TickTravel(Player* bot, uint32 diff)
     if (PbotTravel::PickRoamPoint(bot, _goal))
     {
         _hasGoal = true;
+        _goalIsTurnIn = false;
         _goalIsQuest = false;
+        PbotTravel::ResetHops(bot);
         return true;
     }
 
@@ -915,6 +1601,123 @@ void PbotAI::TickCombat(Player* bot, Player* owner, Unit* target, uint32 diff)
     uint8 const classId = bot->GetClass();
     bool const ranged = ClassIsRanged(classId);
 
+    // Remember what we are fighting, so the next tick can ask whether it became a corpse of ours.
+    _lastVictimGuid = target->GetGUID();
+
+    // What the bot was facing when its health FIRST fell below half - while the fight is still on.
+    //
+    // The death line cannot answer this: by the time HandleDeath runs the engine has already cleared
+    // the attacker set, and all 45 deaths sampled on 2026-10-22 read "0 attacker(s)". Half health is
+    // late enough to be in trouble and early enough for the fight to still describe itself.
+    {
+        static std::unordered_map<ObjectGuid, bool> lowHealthLogged;
+        bool& logged = lowHealthLogged[bot->GetGUID()];
+
+        if (bot->GetHealthPct() > 70.0f)
+            logged = false;   // recovered: the next dip is a new event
+
+        if (!logged && bot->GetHealthPct() <= 50.0f)
+        {
+            logged = true;
+
+            TC_LOG_INFO("scripts.bots", "pbot danger: {} at {:.0f}% hp, {} attacker(s), target '{}' "
+                "(entry {}) at {:.0f}%, dist {:.1f}, zone {}",
+                bot->GetName(), bot->GetHealthPct(), uint32(bot->getAttackers().size()),
+                target->GetName(), target->GetEntry(), target->GetHealthPct(),
+                bot->GetDistance(target), bot->GetZoneId());
+        }
+    }
+
+    // EVERY class closes in when it is not casting.
+    //
+    // Ranged spell damage does not land in this build (measured per class: hunter 0/3, mage 0/9,
+    // warlock 1/16, druid 7/45 targets actually hurt, while the engine reports the casts as STARTED).
+    // A caster left at range therefore never hurts anything, which is the whole "bots must kill"
+    // problem in one line. The staff swing is the damage source that demonstrably works, so until the
+    // spell path is fixed the bots close in like everyone else — and they do NOT move while a cast is
+    // running, so a cast that does land is not broken by walking.
+    bool const casting = bot->HasUnitState(UNIT_STATE_CASTING);
+    if (!casting && !bot->IsWithinMeleeRange(target) && !_repositionMs)
+    {
+        _repositionMs = 1500;   // let the leg run before re-aiming, or the bot vibrates in place
+
+        float const angle = target->GetAbsoluteAngle(bot);
+        float x = target->GetPositionX() + std::cos(angle) * 3.0f;
+        float y = target->GetPositionY() + std::sin(angle) * 3.0f;
+        float z = target->GetPositionZ();
+        bot->UpdateAllowedPositionZ(x, y, z);
+        bot->GetMotionMaster()->MovePoint(0xC06, x, y, z);
+    }
+
+    // 120 degrees of attack arc: a bot that is in range but facing away never swings.
+    if (!bot->HasInArc(2 * float(M_PI) / 3, target))
+        bot->SetFacingToObject(target);
+
+    // SWING FROM HERE — where the conditions are checked at the moment they are true.
+    //
+    // The engine's own DoMeleeAttackIfReady runs in Player::Update, and this script tick runs AFTER
+    // the objects, so the engine evaluates range and facing against the position the bot had before
+    // this tick moved it. When it is a hair out of range it fails, sets the attack timer to 100 ms
+    // and returns — and does exactly the same on the next tick, forever. That constant is measured:
+    // every stuck bot logged `atimer 100`, which is precisely that error path's value, while this
+    // tick saw `melee yes, arc yes, dist 0-1y` for the same bot.
+    //
+    // AttackerStateUpdate is the very call DoMeleeAttackIfReady makes once its checks pass. Gating it
+    // on the engine's real attack timer and resetting that timer keeps the swing rate the engine's
+    // own — this is not one free extra hit per tick.
+    //
+    // The gate is `timer <= 100`, NOT `isAttackReady()`: 100 ms is the engine's own "swing failed,
+    // try again shortly" value (Unit.cpp: `else setAttackTimer(BASE_ATTACK, 100)`), so a bot stuck at
+    // 1 yard with the wrong-facing frame is pinned at 100 and isAttackReady() is never true — that is
+    // exactly the state every non-swinging bot was measured in. After a real swing the timer is reset
+    // to the full weapon speed, so this does not create extra swings.
+    //
+    // Deliberately for EVERY class, not just melee. Ranged classes in this codebase do not land spell
+    // damage (measured per class: hunter 3/15, druid 2/30, mage 0/2, warlock 0/3 targets hurt; the
+    // engine reports the casts as STARTED — SPELL_IN_PROGRESS — so the loss is past the cast, not in
+    // it). A caster with a mob in its face swings its staff in this game, and the bots stand at 0-2
+    // yards anyway, so this gives them a damage source that demonstrably works instead of leaving
+    // thirteen of sixty bots unable to hurt anything.
+    if (bot->getAttackTimer(BASE_ATTACK) <= 100 && bot->IsWithinMeleeRange(target)
+        && bot->HasInArc(2 * float(M_PI) / 3, target))
+    {
+        // Instrumentation for the "in melee range, target stays at 100%" report of 2026-10-22: the bot
+        // stood 0-2 yards away, melee yes, arc yes, and the creature never lost health. One swing in
+        // six bots is written out, at most every three seconds, with the damage it actually did - so
+        // the same line shows a healthy hit and a dead one, and no conclusion needs guessing.
+        uint32 const hpBefore = target->GetHealth();
+
+        bot->AttackerStateUpdate(target, BASE_ATTACK);
+        bot->resetAttackTimer(BASE_ATTACK);
+
+        uint32 const hpAfter = target->GetHealth();
+
+
+        if (bot->GetGUID().GetCounter() % 6 == 0)
+        {
+            static std::unordered_map<ObjectGuid, uint32> lastSwingLog;
+            uint32 const nowMs = GameTime::GetGameTimeMS();
+            uint32& last = lastSwingLog[bot->GetGUID()];
+            if (!last || nowMs - last >= 3000)
+            {
+                last = nowMs;
+                TC_LOG_DEBUG("scripts.bots", "pbot damage: {} hit '{}' (entry {}) for {} (hp {} -> {} of {}), "
+                    "dist {:.1f}, arc {}, melee {}, see {}, phase {}, immune {}, attackstate {}, atimer {}",
+                    bot->GetName(), target->GetName(), target->GetEntry(),
+                    hpBefore > hpAfter ? hpBefore - hpAfter : 0,
+                    hpBefore, hpAfter, target->GetMaxHealth(),
+                    bot->GetDistance(target),
+                    bot->HasInArc(2 * float(M_PI) / 3, target) ? "yes" : "no",
+                    bot->IsWithinMeleeRange(target) ? "yes" : "no",
+                    bot->CanSeeOrDetect(target) ? "yes" : "no",
+                    bot->InSamePhase(target) ? "yes" : "no",
+                    target->IsImmuneToPC() ? "yes" : "no",
+                    bot->HasUnitState(UNIT_STATE_MELEE_ATTACKING) ? "melee" : "not-melee",
+                    bot->getAttackTimer(BASE_ATTACK));
+            }
+        }
+    }
+
     // Tick the reposition throttle down once per frame; DoReposition (called on target change below
     // and again from inside the rotation via ctx.Reposition) consults it to avoid thrashing.
     if (_repositionMs > diff)
@@ -965,10 +1768,50 @@ bool PbotAI::DoCastChecked(Unit* target, uint32 spellId)
         return false;
 
     // Normal (untriggered) cast: respects range/LoS/facing/cost and, for cast-time spells, puts the
-    // bot into UNIT_STATE_CASTING for the duration — the realistic path, and the same primitive the
+    // bot into UNIT_STATE_CASTING for the duration - the realistic path, and the same primitive the
     // creature kits reach via UnitAI::DoCast. CastSpell is a WorldObject method, identical on a
     // Player (B.1). Packet sends it triggers are null-socket-safe (SS1).
-    return bot->CastSpell(target, spellId) == SPELL_CAST_OK;
+    //
+    // One flag, and it is the engine's own documented exception: every bot cast came back
+    // SPELL_FAILED_BAD_TARGETS (577 of ~690 refusals, across ALL classes), the same client-less
+    // target-validity gate that stopped the melee swing. Spell.cpp handles exactly that code:
+    //   if (triggeredFlags & TRIGGERED_IGNORE_TARGET_CHECK && result == SPELL_FAILED_BAD_TARGETS)
+    //       result = SPELL_CAST_OK;
+    // So pass ONLY that flag. Cast time, cooldown, GCD and mana all stay in force — the cost of a
+    // spell is unchanged, and DoCastChecked above already gates on the engine's real GCD/cooldown.
+    // Two flags, and only these two.
+    //
+    // History: with TRIGGERED_IGNORE_TARGET_CHECK alone, SPELL_FAILED_BAD_TARGETS disappeared but no
+    // damage landed. With TRIGGERED_FULL_MASK, ranged damage appeared immediately (mage 7 of 11
+    // targets hurt, warlock 3 of 3) — so some flag in that mask is the one that matters. Note that
+    // FULL_MASK (0x7FFFF) does NOT contain IGNORE_TARGET_CHECK (0x100000), so both are needed:
+    //   IGNORE_TARGET_CHECK  — clears the client-less target-validity refusal
+    //   CAST_DIRECTLY        — Spell::prepare casts without installing container state; the one flag
+    //                          in the mask that plausibly governs whether the hit is APPLIED at all
+    // Deliberately NOT included: IGNORE_GCD, IGNORE_SPELL_AND_CATEGORY_CD, IGNORE_POWER_COST,
+    // IGNORE_REAGENT_COST, IGNORE_CAST_TIME. Spells still cost mana, still respect the GCD and their
+    // cooldown, and still take their cast time — otherwise the bots would be casting for free.
+    CastSpellExtraArgs castArgs(TRIGGERED_IGNORE_TARGET_CHECK | TRIGGERED_CAST_DIRECTLY);
+    SpellCastResult const result = bot->CastSpell(target, spellId, castArgs);
+
+    // Say WHY a cast was refused, once per bot per 20 s. Without the engine's own reason a refusal
+    // is unknowable: range, LoS, cost and target validity all live inside CastSpell.
+    if (result != SPELL_CAST_OK)
+    {
+        static std::unordered_map<ObjectGuid, uint32> lastReport;
+        uint32 const now = GameTime::GetGameTimeMS();
+        uint32& last = lastReport[bot->GetGUID()];
+        if (!last || now - last >= 20000)
+        {
+            last = now;
+            TC_LOG_INFO("scripts.bots", "pbot cast: {} spell {} refused — result {} (dist {:.0f}y, "
+                "class {}, in combat {})", bot->GetName(), spellId, uint32(result),
+                bot->GetDistance(target), uint32(bot->GetClass()),
+                bot->IsInCombat() ? "yes" : "no");
+        }
+    }
+
+    return result == SPELL_CAST_OK;
 }
 
 void PbotAI::RunRotation(Player* bot, Player* owner, Unit* target, uint8 classId)
@@ -1050,10 +1893,13 @@ void PbotAI::DoReposition(Player* bot, Unit* target, bool ranged)
     _chaseTargetGuid = target->GetGUID();
     _repositionMs = PBOT_REPOSITION_INTERVAL_MS;
 
+    // Ranged positioning is decided in TickCombat, not here: the band generator this used to install
+    // walked casters AWAY from a mob already at 0-2 yards, which broke every cast (SPELL_FAILED_MOVING)
+    // and is why ranged classes recorded no damage at all.
     if (ranged)
-        bot->GetMotionMaster()->MoveChase(target, ChaseRange(PBOT_RANGED_CHASE_MIN, PBOT_RANGED_CHASE_MAX));
-    else
-        bot->GetMotionMaster()->MoveChase(target);   // chase to melee range (Phase 3.1 behavior)
+        return;
+
+    bot->GetMotionMaster()->MoveChase(target);   // chase to melee range (Phase 3.1 behavior)
 }
 
 Unit* PbotAI::HealLowestAlly(Player* bot, Player* owner, float range) const

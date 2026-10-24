@@ -50,6 +50,7 @@ namespace
     using ZoneKey = uint64;
     constexpr ZoneKey MakeKey(uint32 mapId, uint32 zoneId) { return (uint64(mapId) << 32) | zoneId; }
     constexpr uint32 MapOf(ZoneKey key) { return uint32(key >> 32); }
+    constexpr uint32 ZoneOf(ZoneKey key) { return uint32(key & 0xFFFFFFFF); }
 
     std::unordered_map<ZoneKey, std::vector<PbotWorldSpots::Spot>> _byZone;
 
@@ -380,18 +381,26 @@ uint8 BandForZone(uint32 mapId, uint32 zoneId)
     return 0;
 }
 
-bool PickForLevel(uint8 level, Spot& out)
+bool PickForLevel(uint8 level, Spot& out, uint32 avoidZoneId)
 {
     EnsureLoaded();
 
     // Every zone whose band fits this level AND whose map is already in memory.
     std::vector<Spot const*> candidates;
 
-    auto collect = [&candidates, level](std::unordered_map<ZoneKey, std::vector<Spot>> const& table)
+    auto collect = [&candidates, level, avoidZoneId](
+        std::unordered_map<ZoneKey, std::vector<Spot>> const& table)
     {
         for (auto const& kv : table)
         {
             if (kv.second.empty())
+                continue;
+
+            // The zone the caller is trying to escape is not a destination. Excluding it here, on
+            // the table key, is exact: every spot in a bucket carries that bucket's zone. Leaving
+            // it in is what produced "giving up on zone 3711 — moving to zone 3711" — the caller
+            // read the answer as a successful move and reset its death counter.
+            if (avoidZoneId && ZoneOf(kv.first) == avoidZoneId)
                 continue;
 
             uint8 const band = kv.second.front().SuggestedLevel;

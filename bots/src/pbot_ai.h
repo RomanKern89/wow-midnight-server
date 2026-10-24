@@ -26,6 +26,7 @@
 #include "Position.h"    // home anchor for ownerless world bots (Phase 6)
 #include "pbot_bg.h"     // PbotBgState — per-bot battleground objective state
 #include "pbot_chat.h"   // PbotVerb — the chat layer drives this AI through ApplyCommand (Phase 4A)
+#include "pbot_intent.h" // PbotIntent::Kind — what this bot is doing for the next few minutes
 #include "pbot_upkeep.h" // PbotUpkeep::State — the bot's vendor/repair errand
 
 #include <string>
@@ -133,6 +134,12 @@ private:
     ObjectGuid _botGuid;
     ObjectGuid _ownerGuid;
     ObjectGuid _chaseTargetGuid;     // last target we issued a chase toward (DoReposition throttle)
+
+    // Did the last fight actually end in a corpse of ours? The right to loot it is the engine's own
+    // answer to "who killed this" (tap and group credit are built on it), so it is the honest test.
+    // Counted because nothing in the log records a kill: "do the bots kill things" had no number.
+    ObjectGuid _lastVictimGuid;
+    uint32 _kills = 0;
     uint32 _repositionMs = 0;        // ms until the chase generator may be re-issued (DoReposition
                                      // throttle). Rotation casts are NOT throttled — DoCastChecked
                                      // gates them on the real engine GCD/cooldown instead.
@@ -164,12 +171,40 @@ private:
     uint32 _lootCooldownMs = 0;      // gate on how often the corpse search runs
 
     uint32 _migrateCooldownMs = 0;   // gate on the "have I outgrown this zone" check
+    uint32 _deliveryCooldownMs = 0;  // between trips back for rewards left on another map
+    uint32 _binCooldownMs = 0;       // gate on the throw-away-what-nobody-buys sweep
+    uint32 _pruneCooldownMs = 0;     // gate on tidying the quest log
+
+    // What this bot is doing for the next few minutes — see pbot_intent.h. Held across ticks on
+    // purpose: a plan the bot abandons every thirty seconds is not a plan.
+    PbotIntent::Kind _intent = PbotIntent::Kind::Count;
+    uint32 _intentCooldownMs = 0;    // gate on recomputing the scores
+
+    // Sets out for a taker of finished work when there is one within reach. Shared by the arbiter
+    // (which promotes the reward leg above the errands) and by TickTravel, so the rule lives once.
+    bool TrySetOutForTurnIn(Player* bot);
+
+    // Stuck watchdog: where the bot was when we last looked, and for how long it has been there.
+    //
+    // A bot can end up somewhere the pathfinder will not move it from — under the terrain, inside
+    // geometry, at a z of zero. Nothing in the decision ladder notices: every module issues its
+    // move, the engine rejects the spline, and the module tries again next tick forever. Measured
+    // on the live realm, ONE bot in that state produced 38,264 rejected splines while the
+    // population handed in nothing.
+    Position _lastSeenPos;
+    uint32 _stillMs = 0;
+    uint8 _stuckStreak = 0;          // consecutive rescues; two means home itself is the trap
 
     Position _goal;                  // where the bot is currently walking (quest objective or roam)
     bool _hasGoal = false;
     bool _goalIsQuest = false;
+    bool _goalIsTurnIn = false;      // this destination IS the hand-in, not an objective to work on
     uint32 _goalCooldownMs = 0;      // gate on picking the next destination
+    uint32 _turnAsideMs = 0;         // gate on re-aiming at a nearer taker (see TickTravel)
     uint32 _goalMs = 0;              // time spent walking to the current destination (give-up budget)
+    uint32 _goalCombatMs = 0;        // of that, how much was spent in combat — the difference between
+                                     // "the ground refuses to be crossed" and "I kept being attacked"
+    float  _goalStartDist = 0.0f;    // how far the current destination was when the bot set out
     uint32 _questWalkMs = 0;         // time spent walking to the chosen questgiver
     uint32 _lootWalkMs = 0;          // time spent walking to the chosen corpse
     uint32 _noQuestMs = 0;           // how long this bot has had no quest to pursue (hearth timer)
@@ -184,7 +219,10 @@ private:
     uint32 _workbenchMs = 0;         // walking to a forge; nothing else may divert the bot until 0
     uint32 _professionSetupMs = 0;   // granting the craft and learning recipes, above the ladder
     // Quests the engine declined to actually add for this bot, so it stops walking back to ask.
+    // Cleared on every map change — see PbotAI::Tick; a refusal earned on one continent says
+    // nothing about the next.
     std::unordered_set<uint32> _refusedQuests;
+    uint32 _lastKnownMapId = 0;      // to notice a map change without a hook
 
 public:
     // What a bot was doing with a tick. Counted across the whole population so the question "where

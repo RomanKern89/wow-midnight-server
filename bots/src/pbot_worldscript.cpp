@@ -24,6 +24,8 @@
 #include "pbot_questgoal.h"   // where finished quests get handed in
 #include "pbot_world_spots.h"  // Preload at boot instead of stalling the world thread later
 #include "pbot_upkeep.h"       // repairer locations, likewise loaded at boot
+#include "pbot_social.h"       // the generated speech pool, likewise loaded at boot
+#include "pbot_intent.h"       // the generated behaviour profiles, likewise loaded at boot
 
 #include "Config.h"            // Pbot.WorldPopulation
 #include "SharedDefines.h"     // ALLIANCE / HORDE
@@ -38,6 +40,15 @@
 
 #include <unordered_map>
 #include <vector>
+
+namespace
+{
+    // How often the generated speech pool is checked for having run low. The check is an in-memory
+    // comparison; the reload it may trigger is one SELECT of at most a few hundred rows.
+    constexpr uint32 PBOT_LLM_REFILL_CHECK_MS = 600000;   // 10 minutes
+
+    uint32 poolRefillCheckMs = 0;
+}
 
 // ---- startup orphan sweep + per-tick driver + shutdown cleanup (SS8.2 / SS8.5 / SS9) --------
 
@@ -64,6 +75,15 @@ void PbotWorldScript::OnStartup()
     // And where finished quests are handed in. Same full-table join, same reason to pay for it at
     // boot: a bot deciding what to do next must not stop to read the world database.
     PbotQuestGoal::PreloadTurnInSpots();
+
+    // The generated speech pool. Loaded here rather than per-word because a bot must never read the
+    // database to say something: if the model that fills the pool is off, this loads nothing and the
+    // bots speak their built-in lines — the failure mode is "as before", not "silent" or "stalled".
+    PbotSocial::LoadGeneratedPool();
+
+    // The generated behaviour profiles, same principle: read once, and a bot never consults the
+    // database to decide what to do next. With none loaded, every bot uses its own personality.
+    PbotIntent::LoadProfiles();
 
     PopulateWorldFromConfig();
 }
@@ -137,6 +157,22 @@ void PbotWorldScript::OnUpdate(uint32 diff)
     // crashed the server — see PBOT_POPULATE_INTERVAL_MS.
     PbotMgr::TickPopulateQueue(diff);
     PbotMgr::TickReloadQueue(diff);
+
+    // Keep the generated speech pool from running dry.
+    //
+    // The game consumes lines into memory and never reports which ones it used, so nothing shrinks in
+    // the database and a long-running world would slowly fall back to the built-in lines. Checked on a
+    // timer, and the query runs only when an event has actually run low — a few hundred rows, once in
+    // a while, which is nothing against the work the boot preloads already pay for. Starting the
+    // generator at any later moment therefore heals the world by itself, with no console command.
+    if (poolRefillCheckMs > diff)
+        poolRefillCheckMs -= diff;
+    else
+    {
+        poolRefillCheckMs = PBOT_LLM_REFILL_CHECK_MS;
+        if (PbotSocial::PoolNeedsRefill())
+            PbotSocial::LoadGeneratedPool();
+    }
 
     // Cross-map teleports (Phase 7 prerequisite). A bot has no client to answer the worldport, so
     // it used to sit in IsBeingTeleportedFar() limbo and get DISMISSED — which meant bots could

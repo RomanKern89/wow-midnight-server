@@ -18,6 +18,8 @@
 
 #include "Define.h"
 
+#include <string>
+
 class Player;
 
 namespace PbotSocial
@@ -35,6 +37,23 @@ namespace PbotSocial
     void OnQuestTurnedIn(Player* bot, uint32& cooldownMs, std::string const& questTitle);
     void OnLevelUp(Player* bot, uint32& cooldownMs);
     void OnNearDeath(Player* bot, uint32& cooldownMs);
+
+    // The generated-line pool. A separate program (on the operator's machine, next to whatever runs
+    // the model) writes `characters.pbot_llm_lines`; this side only ever reads it, and only when
+    // told to. Called once at world start and by `.pbot llm reload`.
+    void LoadGeneratedPool();
+
+    // What the pool holds right now, per event — for `.pbot llm stats`.
+    std::string DescribeGeneratedPool();
+
+    // Has any event's in-memory pool run low? The world consumes lines and never reports which ones,
+    // so a long run drifts back to the built-in lines unless someone reloads. Checked on a timer by
+    // PbotWorldScript, which reloads only when this says yes.
+    bool PoolNeedsRefill();
+
+    // A generated line for this event, shaped to this bot's level band and personality, or `fallback`
+    // when the pool has nothing suitable. Consumes what it returns, so no line is said twice in a run.
+    std::string PickLine(Player* bot, char const* event, char const* fallback);
 }
 
 #endif // TRINITYCORE_PBOT_SOCIAL_H

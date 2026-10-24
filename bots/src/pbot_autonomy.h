@@ -61,6 +61,15 @@ namespace PbotAutonomy
     // will go looking for a fight is part of who it is rather than a global constant.
     Unit* FindTarget(Player* bot, float range = SEARCH_RANGE);
 
+    // Only a creature one of this bot's unfinished quests actually needs. No fallback, on purpose.
+    //
+    // The pair exists because the two questions have opposite right answers. "What shall I fight?"
+    // wants any fair opponent. "Shall I stop walking to my objective for this?" wants a yes only
+    // when the thing in front of the bot is the objective — otherwise a bot never gets anywhere,
+    // which is precisely what was measured: 352 of 362 quests in progress had not advanced by one
+    // step, while combat consumed 45% of every tick.
+    Unit* FindQuestTarget(Player* bot, float range = SEARCH_RANGE);
+
     // How many creatures within range pass the same filter FindTarget applies. Purely diagnostic,
     // and the one number that separates "there is nothing here to kill" from "it kills slowly" —
     // two causes of a low levelling rate that look identical from the outside.
@@ -105,10 +114,23 @@ namespace PbotAutonomy
     // 104 times, another 71, all in a handful of high-level zones. Reviving at the home anchor was
     // supposed to break a death loop, but when the anchor itself sits in lethal country it CLOSES
     // the loop instead: die, revive, die again, every seventeen seconds.
-    constexpr uint8 DEATHS_BEFORE_RELOCATING = 3;
+    //
+    // Two, not three. Three was chosen while the relocation itself was broken: the picker returned
+    // the zone the bot was dying in, so the "move" changed nothing but reset the counter, and the
+    // live log shows the loop running as 3 + 3 + 3 + ... deaths. Every death spent reaching that
+    // number is a death the bot did not have to pay, so the threshold now fires as soon as a place
+    // has proved itself twice.
+    constexpr uint8 DEATHS_BEFORE_RELOCATING = 2;
 
     // Deaths further apart than this are unrelated bad luck, not a loop.
-    constexpr uint32 LOOP_WINDOW_MS = 120000;
+    // Deaths this close together are one loop, not three accidents.
+    //
+    // Two minutes was too tight to see the loop it was written for: measured 2026-10-22, one bot died
+    // every ~2.5 minutes at the hands of the same creature, so each death arrived just after the
+    // window closed, the counter reset to one, and the relocation that should have moved it never
+    // fired - 38 deaths in a hundred minutes. Ten minutes keeps genuinely separate accidents apart
+    // while catching a bot that comes back to the same spot to die again.
+    constexpr uint32 LOOP_WINDOW_MS = 600000;
 
     // Takes the bot's home anchor by reference: escaping a death loop means moving house, and the
     // anchor has to move with the bot or it will simply walk back to where it kept dying.
@@ -120,6 +142,12 @@ namespace PbotAutonomy
     // Health below which a bot starts thinking about leaving. Scaled per bot by Caution, so the
     // timid break off early and the reckless push on — the same fight is not the same decision for
     // everyone.
+    //
+    // NOTE: the real reason bots "never kill" is not here. Lowering this 30 -> 20 on 2026-10-17
+    // produced 109 retreats against 109 before, i.e. no change, while a new measurement showed the
+    // TARGET still at 100% health at 103 of 107 break-offs: the bots are not out-damaged, they are
+    // not damaging anything at all. See the combat-damage investigation; do not tune this value
+    // expecting kills.
     constexpr float RETREAT_BELOW_HEALTH_PCT = 30.0f;
 
     // Never run from something this close to dead. Fleeing a mob on its last legs throws away the

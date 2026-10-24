@@ -62,6 +62,12 @@ constexpr uint32 PBOT_POPULATE_INTERVAL_MS = 1000;
 // How long a bot stays put after reaching a destination before choosing the next one. Longer after
 // a quest objective than after a plain roam: having walked to where the quest's creatures are, the
 // bot needs time to actually kill them, whereas a roam is over the moment it arrives.
+//
+// Tried twice, and kept at two minutes:
+//  * 30 s (2026-10-17, while NO damage worked): idle 21.3% -> 18.6%, ARRIVED x2.5, but deaths
+//    1.14 -> 2.44/min — every extra encounter was a free loss back then.
+//  * 60 s (2026-10-19, AFTER damage was fixed): idle 22.0% against 21.3% — no change, so idle is
+//    NOT this pause; it is Wander after every rung of the ladder declined.
 constexpr uint32 PBOT_GOAL_QUEST_LINGER_MS = 120000;   // 2 minutes among the objective's mobs
 constexpr uint32 PBOT_GOAL_ROAM_LINGER_MS  = 20000;    // brief pause, then move on again
 

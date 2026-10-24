@@ -27,17 +27,18 @@ live with `.pbot world time`:
 
 | Stage | Behaviour |
 |---|---|
-| **Death** | Dies, waits, revives. After repeated deaths in one place it moves house — a bot that keeps dying in an over-level zone leaves it, the way a player would |
+| **Death** | Dies, waits, revives. After two deaths in one place it moves house — to a *different* zone, because the zone it is dying in is the trap — and the log says so when there is no refuge outside it |
 | **Retreat** | Breaks off a fight already lost. Decided once and then honoured, because a bot that re-decides every tick swings, steps back, swings again and dies anyway |
-| **Combat** | Class rotations through the engine's own `SpellHistory`; ranged classes hold a 20–30 y band, melee close |
+| **Combat** | Class rotations through the engine's own `SpellHistory`; ranged classes hold a 20–30 y band, melee close. Cast damage now reaches its target: before the visibility fix every spell was discarded after `CheckTarget` and only the staff swing worked |
 | **Rest** | Eats and sits when hurt |
 | **Loot** | Loots its own kills |
 | **Hunt** | Picks a fair fight from local wildlife; hostile players outrank wildlife |
 | **Gather** | Mines and picks herbs — the modern `GAMEOBJECT_TYPE_GATHERING_NODE`, not just old-style chests |
-| **Town errands** | Sells junk, repairs per slot (weapons first), visits the auction house, walks to a forge. Whichever destination is *nearest* wins; worn-out gear jumps the queue |
-| **Market** | Reads its mail, lists surplus, buys upgrades it can actually wear, and wears them |
-| **Craft** | Practises one profession per bot, walks to a workbench when a recipe needs one |
-| **Quest** | Takes quests, goes where the objectives are, returns to hand them in |
+| **Town errands** | Sells junk, repairs per slot (weapons first), visits the auction house, walks to a forge, buys the profession tool a recipe needs. Whichever destination is *nearest* wins; worn-out gear jumps the queue |
+| **Market** | Reads its mail, lists surplus, buys upgrades it can actually wear, and wears them. Gear is re-checked every time a bot is reloaded, so bots that predate a gear rule are brought up to their level |
+| **Craft** | Practises one profession per bot, walks to a workbench when a recipe needs one, and buys the tool when the recipe needs that instead |
+| **Quest** | Takes quests, goes where the objectives are — kill targets by their spawn points when a quest has no map marker, item objectives by the creatures that drop them — and returns to hand them in. A giver it could not reach is left alone for 15 minutes instead of being asked for again |
+| **Delivery** | A finished quest whose taker stands on another continent is collected by a deliberate trip, once the waiting work is worth the journey |
 | **Travel / roam** | Stepped long-distance movement, mounts for the long stretches, migrates zone when it outgrows one |
 
 Bots also have **personality**: greed, diligence, aggression and wanderlust are
@@ -53,6 +54,7 @@ here because each one was a *defect that looked like working software*.
 
 | | before | after | what was actually wrong |
 |---|---|---|---|
+| Deaths per kill | 15–20% | **4.4%** | Not a balance problem. A socket-less bot is invisible to the engine's own targeting, so every spell target was discarded before damage; with that flag fixed, 8,305 kills against 398 deaths over 6.3 h |
 | Deaths | 205 | **9–17** | Not combat weakness. Bots were pinned in loops and died where they stood |
 | Quest accepts that did nothing | 3498 | **~1** | `AddQuestAndCheckCompletion` can decline after `CanTakeQuest` says yes; the code counted the attempt |
 | Day spent on town errands | 20.7% | **3.3%** | Errands never *finished*: the travel step asked the motion generator whether the bot was moving, and a generator outlives its spline |
@@ -166,17 +168,27 @@ hang. See the RAM row in `docker/INSTALL.md`.
 
 ## Honest limitations
 
-* **Quest turn-ins are slow.** Bots complete quests and only deliver a handful
-  per session; roughly 260 finished quests sit undelivered on a mature server,
-  most of them with their taker on another continent. The machinery is in
-  (turn-in locations for 23293 quests, including the 1563 handed to objects) but
-  the throughput problem is not solved.
-* **Crafting is a trickle** — a few items per session. About 10 bots in 60 hold
-  the materials for something at any moment, and nine of those need a workbench
-  that is never the nearest errand.
+* **Quest turn-ins are still slow** — roughly 7-8 per hour, with about 30 finished
+  quests waiting at any moment, most of them with a taker on another continent or
+  inside a phase. Delivery trips and the taker-first rule raised this from a
+  handful per session; the limit is now the bot's time, not reach.
+* **Levels take about ten hours.** 60 bots produce ~1,300 kills an hour between
+  them — about nine per bot — and a level needs dozens. That is pacing, not a
+  defect, and it was left as it is on purpose.
+* **Crafting is a trickle.** Tools are bought and workbenches are walked to, but
+  only about ten bots in sixty hold materials for something at any moment.
 * **Quest chains are not followed deliberately.** A bot continues a chain only
   when the next step happens to come from the NPC it just visited.
-* **Long journeys still time out** occasionally (roughly 5 give-ups in 36 trips).
+* **Bots still fight mostly in melee.** A cast now lands, but every class closes
+  in while it is not casting, because the staff swing is the fallback that always
+  works.
+* **54 creature difficulty rows still leave a creature at 0 health** — named in
+  `sql/12_zero_hp_templates.sql`. Their intended health is not derivable from the
+  data: the modifier encodes absolute health per expansion and runs to 5e7.
+* **About seven trips an hour still end at an NPC who exists in another phase.**
+  The write-off is per bot and per spawn now, so it repeats far less than before,
+  but it cannot be filtered before arrival — the grid is not loaded at the moment
+  the destination is chosen.
 * **Groups exist but do nothing together**, and no bot uses consumables.
 * Battleground flag capture is written but has never been observed end to end.
 

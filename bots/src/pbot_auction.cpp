@@ -4,6 +4,8 @@
 
 #include "pbot_auction.h"
 
+#include "pbot_bags.h"   // a bag is worth buying for the same reason room is worth having
+
 #include "pbot_equip.h"        // wear what just arrived in the post
 #include "pbot_profession.h"    // do not sell the raw material this bot smelts and crafts with
 
@@ -57,8 +59,9 @@ namespace
                 return false;
 
             // A hostile auctioneer will not deal with this bot, exactly as it would not with a
-            // player — the same lesson the repairer table had to learn the expensive way.
-            return creature->IsFriendlyTo(_bot);
+            // player. `IsFriendlyTo` demands REP_FRIENDLY (4) and so refused NEUTRAL auctioneers,
+            // which do deal - the same over-strict test that made bots walk past live repairers.
+            return creature->GetReactionTo(_bot) >= REP_NEUTRAL;
         }
 
     private:
@@ -299,6 +302,15 @@ namespace
         if (!proto)
             return false;
 
+        // Bags are the one thing besides gear worth real money to a bot, and for a plainer reason:
+        // a bot with no room cannot be paid a quest reward at all. It also closes the market loop —
+        // a tailor bot's spare bags have a buyer, so the craft is worth practising.
+        //
+        // PbotBags owns the whole judgement (is it a plain bag, is it bigger than what it wears,
+        // can the purse stand it) so that buying here and buying from a vendor cannot drift apart.
+        if (proto->GetClass() == ITEM_CLASS_CONTAINER)
+            return PbotBags::WouldTake(bot, proto, auction.BuyoutOrUnitPrice);
+
         if (proto->GetClass() != ITEM_CLASS_WEAPON && proto->GetClass() != ITEM_CLASS_ARMOR)
             return false;
 
@@ -529,7 +541,23 @@ uint64 PbotAuction::CollectMail(Player* bot)
     // — worse, actually: the next selling pass sees an unworn item as surplus and lists it straight
     // back, so the bot pays a deposit to give away what it just paid for.
     if (itemsTaken)
+    {
         PbotEquip::EquipFromBags(bot);
+
+        // A bag that arrived in the mail is deliberately NOT installed here.
+        //
+        // It was, and the realm aborted twice in a row at exactly this point — same bot, same item,
+        // both times on the line after "emptied the mailbox":
+        //
+        //   Player::_SaveInventory: 'Faelar' has incorrect values (Bag: 255, Slot: 0) for the item
+        //   BaseEntity::~BaseEntity ... deleted but still in world!! ABORTED.
+        //
+        // Mail collection is already a delicate sequence — items are pulled out of the mail store,
+        // re-stated and moved into the inventory — and stacking a bag swap on top of it, which
+        // moves the contents of an equipped container as well, was one mutation too many in one
+        // breath. The bag simply waits in the bags; the vendor trip installs it a minute later,
+        // when nothing else is in flight.
+    }
 
     return taken;
 }

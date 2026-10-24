@@ -30,6 +30,11 @@ namespace PbotEquip
     // Returns how many items were successfully equipped.
     uint32 GearUp(Player* bot);
 
+    // Fills any EMPTY bag slot and touches nothing else. Safe to call on a bot that already has
+    // bags or items; unlike GearUp it is not a one-off, because bots survive restarts and a bot
+    // with a full 16-slot backpack cannot be paid a quest reward.
+    uint32 FillBags(Player* bot);
+
     // Wears what is already in the bags, swapping out anything worse.
     //
     // GearUp cannot do this: it creates new items from templates and never looks in the bags, so a

@@ -32,6 +32,15 @@ namespace PbotUpkeep
     // Free bag slots at or below which the bot considers a trip worthwhile.
     constexpr uint32 BAGS_FULL_AT = 3;
 
+    // How much room a vendor trip tries to leave the bot with.
+    //
+    // Not a comfort setting — quest rewards are the reason. CanRewardQuest refuses a hand-in when
+    // the prize has nowhere to go, and a bot at zero free slots walks to the right questgiver,
+    // holding finished work, and comes away with nothing: measured 699 times in one soak, every one
+    // logged "bags 0 free". A few slots is the difference between a quest pipeline that moves and
+    // one that does not.
+    constexpr uint32 ROOM_TO_LEAVE = 6;
+
     // Equipment durability fraction below which it is worth paying to repair.
     //
     // Back at 0.5 after measuring 0.8. Sending bots to town at the first sign of wear tripled the
@@ -68,19 +77,41 @@ namespace PbotUpkeep
     // What a bot is walking to town FOR. A trip is committed to one of these, and the errand has to
     // travel with the destination: on arrival the bot needs to know whether it came to meet someone
     // or to stand at a forge, and re-deriving it would answer differently now that it has moved.
-    enum class Errand : uint8 { Repair, Auction, Workbench };
+    enum class Errand : uint8 { Repair, Auction, Workbench, Tool };
+
+    // How many spawns one bot remembers as hidden from it by phase. Fixed and small: the list only
+    // ever holds the handful of destinations a bot actually walked to and could not see.
+    constexpr uint32 PHASED_SLOTS = 8;
 
     struct State
     {
+        // A spawn this bot has walked to and found in another phase.
+        //
+        // Per bot, not per position, because phase is a property of ONE character's quest state:
+        // the same NPC stands in the world for a bot that has done the quest and is hidden from one
+        // that has not. Kept on the shared row instead, one bot's quest log wrote the NPC off for
+        // every bot on the map (measured 2026-10-23).
+        struct PhasedSpawn
+        {
+            uint64 spawnId = 0;
+            uint32 msLeft = 0;
+        };
+
         ObjectGuid vendorGuid;      // vendor being approached right now
         uint32 cooldownMs = 0;
         uint32 walkMs = 0;
         Position townGoal;          // committed destination of the current town trip
+        uint32 townGoalEntry = 0;   // the NPC that destination was read from (0 for a workbench object)
+    uint64 townGoalSpawnId = 0; // its spawn GUID, to ask the map whether the creature exists at all
         uint32 townGoalMap = 0;     // the map it is on; a destination is meaningless off its map
         Errand townGoalErrand = Errand::Repair;   // what that destination is for
         uint32 townGoalFocus = 0;   // and which workbench, when it is one
         uint8 emptyLooks = 0;       // consecutive arrivals at townGoal that found nobody
+        uint8 noVendorRuns = 0;     // consecutive trips that ended with nobody to trade with
         bool hasTownGoal = false;
+
+        // Spawns this bot will not set out for again until their timer runs out. See PhasedSpawn.
+        PhasedSpawn phasedSpawns[PHASED_SLOTS];
     };
 
     // Walks to a vendor and does business. Returns true while it owns the tick.
@@ -96,6 +127,15 @@ namespace PbotUpkeep
     // the expected result early on, since a fresh bot has empty bags and unworn armour — and "the
     // module is broken". Those are opposite conclusions, so the inputs have to be readable directly.
     std::string Describe(Player* bot);
+
+    // True when the bot's gear has fallen below the point where it should go and repair it — the same
+    // threshold the town errand itself uses (REPAIR_BELOW), not "everything is already destroyed".
+    //
+    // The distinction cost real deaths: the travel-ladder promotion was gated on GearIsDestroyed, so a
+    // bot walked around at 40% armour (below the repair threshold, above zero) and never left the hunt
+    // to fix it, until it reached 0%. Measured: 9 of 60 bots fully broken, and the 0% ones produce most
+    // of the deaths. Promotion has to follow the threshold, not the catastrophe.
+    bool GearNeedsRepair(Player const* bot);
 }
 
 #endif // TRINITYCORE_PBOT_UPKEEP_H

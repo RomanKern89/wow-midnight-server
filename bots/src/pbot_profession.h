@@ -21,6 +21,7 @@
 #include "Define.h"
 
 #include <string>
+#include <vector>
 #include <unordered_set>
 
 class Player;
@@ -73,6 +74,12 @@ namespace PbotProfession
     // still refused with "requires spell focus", because between the vein and the bar there is a
     // journey to a forge — the same journey the bot already makes for repairs and for the market.
     uint32 NeededFocus(Player* bot);
+
+    // Totem categories (profession tools: a smith's hammer, a mining pick) that a recipe this bot
+    // knows requires and the bot does NOT carry. The engine refuses such a cast with
+    // SPELL_FAILED_TOTEM_CATEGORY (152), which no amount of walking to a forge will change - the
+    // icon the player sees is "requires a tool", so the bot has to buy one.
+    std::vector<uint32> NeededToolCategories(Player* bot);
 
     // Every item id consumed by a recipe this bot knows.
     //

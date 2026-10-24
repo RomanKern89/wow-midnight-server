@@ -4,6 +4,8 @@
 
 #include "pbot_migrate.h"
 
+#include "pbot_travel.h"   // never make an unstandable spot a bot's home
+
 #include "Log.h"
 #include "MotionMaster.h"
 #include "Player.h"
@@ -50,6 +52,12 @@ bool PbotMigrate::Tick(Player* bot, uint32& cooldownMs, uint32 diff, Position& h
 
     if (destination.MapId == bot->GetMapId() && destination.ZoneId == bot->GetZoneId())
         return false;   // the picker chose the zone we are already in
+
+    // Same guard as the delivery lift: a destination with no ground under it must never become a
+    // home anchor. See PbotTravel::SnapToGround — an unchecked coordinate stored as home is how a
+    // bot ends up permanently under the terrain, rescued back into it every five minutes.
+    if (!PbotTravel::SnapToGround(bot, destination.Pos))
+        return false;
 
     if (!bot->TeleportTo(destination.MapId, destination.Pos.GetPositionX(),
                          destination.Pos.GetPositionY(), destination.Pos.GetPositionZ(),

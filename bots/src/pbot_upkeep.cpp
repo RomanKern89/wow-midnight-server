@@ -4,6 +4,8 @@
 
 #include "pbot_upkeep.h"
 
+#include "pbot_bags.h"       // buying a bag is town business like any other
+#include "pbot_belongings.h" // what this bot considers worth keeping
 #include "pbot_hearth.h"   // last resort when there is nowhere to walk to
 #include "pbot_travel.h"   // repairers live in towns; the bot has to go to one
 #include "pbot_auction.h"  // and so do auctioneers — the market is a town errand like any other
@@ -25,10 +27,22 @@
 #include "MotionMaster.h"
 #include "MovementDefines.h"
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "ObjectDefines.h"
 #include "Player.h"
 #include "StringFormat.h"
 
+namespace
+{
+    // Defined below in its own anonymous namespace block, which is the same namespace as this
+    // declaration - that is what keeps the symbol internal and defined.
+    uint32 BuyNeededTools(Player* bot, Creature* vendor);
+
+    void LoadToolSpots();
+}
+
+#include <algorithm>
+#include <unordered_map>
 #include <cmath>
 #include <vector>
 
@@ -51,6 +65,11 @@ namespace
 
     // Home already, or no create position for this race — nothing more to try for a while.
     constexpr uint32 STRANDED_RETRY_MS = 300000;
+
+    // How far the no-vendor backoff is allowed to grow, in multiples of AFTER_HEARTH_MS. Ten of
+    // them is twenty minutes, which is long enough to stop the circuit dominating a bot's day and
+    // short enough that a bot which wanders into a town still trades there.
+    constexpr uint8 MAX_NO_VENDOR_BACKOFF = 10;
 
     // Walking to the nearest town is a real journey, not a stroll to the next hut, so this budget is
     // far larger than the local walk. It still exists: an unreachable town must not become a bot's
@@ -78,6 +97,29 @@ namespace
 
     // How long a position stays out of the running once a bot has found it deserted.
     constexpr uint32 SPOT_BLOCK_SECONDS = 3600;
+
+    // How long ONE bot stays away from a spawn it found in another phase.
+    //
+    // Four hours, the figure the shared row used to carry, and now carried per bot - which is the
+    // whole point: the phase belongs to this character's quest state, so only this character has
+    // grounds to stay away. Measured 2026-10-23: with the flag on the row, one bot's quest log took
+    // a working repairer off the map for every bot that came after it.
+    //
+    // It must stay longer than SPOT_BLOCK_SECONDS. The row is still written off for everybody on the
+    // ordinary timer, so a shorter per-bot memory would expire first and never skip anything: the
+    // bot would set out again the moment the shared block lifted.
+    constexpr uint32 PHASE_BLOCK_MS = 4 * 3600 * 1000;
+
+    // PHASED_SLOTS sizes State::phasedSpawns (declared in the header, where the array is), so the
+    // number has one definition and this is only the name the code here uses.
+    constexpr uint32 PHASED_SLOTS = PbotUpkeep::PHASED_SLOTS;
+
+    static_assert(sizeof(PbotUpkeep::State::phasedSpawns)
+        == PHASED_SLOTS * sizeof(PbotUpkeep::State::PhasedSpawn),
+        "the per-bot phase list is sized by PHASED_SLOTS");
+
+    // Longest walk worth making to a forge. Beyond this the bot simply does not craft yet.
+    constexpr float MAX_WORKBENCH_TRIP = 1500.0f;
 
     constexpr float APPROACH_OFFSET = 3.0f;
 
@@ -147,7 +189,12 @@ namespace
             if (!creature->HasNpcFlag(_requireRepair ? UNIT_NPC_FLAG_REPAIR : UNIT_NPC_FLAG_VENDOR))
                 return false;
 
-            return creature->IsFriendlyTo(_bot);
+            // A trader serves anyone it is not hostile to. `IsFriendlyTo` asks for REP_FRIENDLY
+            // (4) and therefore refused neutral traders, which do trade: measured, a bot stood on
+            // a live repairer whose reaction to it was 3 (neutral), the search reported "nobody is
+            // there", and the bot walked on with broken gear. Hostile and hated traders stay out,
+            // which is what the original check was for.
+            return creature->GetReactionTo(_bot) >= REP_NEUTRAL;
         }
 
     private:
@@ -223,6 +270,8 @@ namespace
     {
         Position pos;
         uint32 faction = 0;
+        uint32 entry = 0;   // the NPC this row was read from, so a bot can ask the world about it
+        uint64 spawnId = 0; // its spawn GUID - the identity the map indexes creatures by
 
         // When this position becomes worth trying again. Set whenever a bot walks here and finds no
         // trader: measured, such a bot sees 20-68 creatures around it, 7-18 of them friendly, and
@@ -233,9 +282,20 @@ namespace
         // dead. An hour is long enough that the population stops wasting trips on genuinely wrong
         // rows, short enough that a real repairer is not written off for the life of the server.
         time_t blockedUntil = 0;
+
+        // The coordinates cannot be reached at all, so no amount of retrying will help. Set when a
+        // bot stands on the row and the NPC it names is still hundreds of yards away in 3D - a spawn
+        // point in the air, or on a floor the bot cannot climb to. Measured 2026-10-21: rows at
+        // z ~ 1331 while the bot stood on the ground, 1328 yards apart in 3D, retried every hour.
+        bool unreachable = false;
     };
 
     std::unordered_map<uint32, std::vector<RepairSpot>> _repairSpots;
+
+    // Vendors that sell a profession tool, keyed by the totem category the tool satisfies, then by
+    // map. Kept apart from the repair/auction tables because the errand is keyed by a CATEGORY, not
+    // by a map alone: the bot needs one specific kind of tool, and any vendor selling it will do.
+    std::unordered_map<uint32, std::unordered_map<uint32, std::vector<RepairSpot>>> _toolSpots;
 
     // The same table for auctioneers. A bot with goods to sell needs to reach a market exactly the
     // way a bot with worn armour needs to reach a smith, and measurement showed the market is the
@@ -262,11 +322,15 @@ namespace
         {
             case Errand::Auction:   return "an auctioneer";
             case Errand::Workbench: return "a workbench";
+            case Errand::Tool:      return "a tool vendor";
             default:                return "a repairer";
         }
     }
 
-    bool NeedsSpace(Player* bot)  { return bot->GetFreeInventorySlotCount() <= PbotUpkeep::BAGS_FULL_AT; }
+    // One definition of "short of room", shared with the quest reward path that actually suffers
+    // from it. They disagreed: this said 3 slots, the reward path needed 6, so a bot could be
+    // perfectly content by its own reckoning and still unable to accept a single quest reward.
+    bool NeedsSpace(Player* bot)  { return PbotBelongings::NeedsRoom(bot); }
     bool NeedsRepair(Player* bot) { return WorstDurability(bot) < PbotUpkeep::REPAIR_BELOW; }
 
     // Who should this bot walk to? A repairer when the gear is what hurts — those nearly always sell
@@ -278,6 +342,15 @@ namespace
                 return repairer;
 
         if (NeedsSpace(bot))
+            if (Creature* seller = FindVendor(bot, /*requireRepair*/ false))
+                return seller;
+
+        // A recipe the bot cannot make for want of a tool is a reason to trade just as much as worn
+        // armour. Measured 2026-10-21: bots walked to a tool vendor, reported "nobody is there" and
+        // bought nothing, because this function only ever asked about repairs and bag space - with
+        // gear at 100% and bags empty it answered "no reason" while a tool seller stood four yards
+        // away.
+        if (!PbotProfession::NeededToolCategories(bot).empty())
             return FindVendor(bot, /*requireRepair*/ false);
 
         return nullptr;
@@ -313,18 +386,29 @@ namespace
             return byMap == byFocus->second.end() ? nullptr : &byMap->second;
         }
 
+        if (errand == Errand::Tool)
+        {
+            auto const byFocus = _toolSpots.find(focus);
+            if (byFocus == _toolSpots.end())
+                return nullptr;
+
+            auto const byMap = byFocus->second.find(mapId);
+            return byMap == byFocus->second.end() ? nullptr : &byMap->second;
+        }
+
         auto& table = errand == Errand::Auction ? _auctionSpots : _repairSpots;
         auto const itr = table.find(mapId);
         return itr == table.end() ? nullptr : &itr->second;
     }
 
-    void MarkSpotEmpty(Player* bot, Position const& where, Errand errand, uint32 focus)
+    void MarkSpotEmpty(Player* bot, Position const& where, Errand errand, uint32 focus,
+        uint32 seconds = SPOT_BLOCK_SECONDS)
     {
         std::vector<RepairSpot>* spots = SpotsFor(bot->GetMapId(), errand, focus);
         if (!spots)
             return;
 
-        time_t const until = GameTime::GetGameTime() + SPOT_BLOCK_SECONDS;
+        time_t const until = GameTime::GetGameTime() + seconds;
         uint32 blocked = 0;
 
         for (RepairSpot& spot : *spots)
@@ -340,10 +424,91 @@ namespace
         if (blocked)
             TC_LOG_INFO("scripts.bots", "pbot upkeep: {} rows around that position are now out of "
                 "the running for {} minutes ({} found it deserted)", blocked,
-                SPOT_BLOCK_SECONDS / 60, bot->GetName());
+                seconds / 60, bot->GetName());
     }
 
-    bool FindNearestTownSpot(Player* bot, Errand errand, uint32 focus, Position& out)
+    // A row whose NPC is not merely absent but unreachable is dead weight: it keeps winning the
+    // nearest-first choice and sending bots to the same place for nothing. Unlike the timed block,
+    // this one lasts for the process lifetime, because the fault is in the coordinates, not in the
+    // moment. Nothing else changes - other rows at that position keep their normal handling.
+    void MarkSpotUnreachable(Player* bot, Position const& where, Errand errand, uint32 focus)
+    {
+        std::vector<RepairSpot>* spots = SpotsFor(bot->GetMapId(), errand, focus);
+        if (!spots)
+            return;
+
+        uint32 marked = 0;
+        for (RepairSpot& spot : *spots)
+        {
+            if (spot.pos.GetExactDist2d(where.GetPositionX(), where.GetPositionY()) < SAME_SPOT_RANGE
+                && !spot.unreachable)
+            {
+                spot.unreachable = true;
+                ++marked;
+            }
+        }
+
+        if (marked)
+            TC_LOG_INFO("scripts.bots", "pbot upkeep: {} dropped {} rows at that position - they can "
+                "never be reached from the ground", bot->GetName(), marked);
+    }
+
+    // Remember, for this bot only, that a spawn is in another phase. Called after the walk has
+    // already been made and failed, so the entry replaces a slot only when the list is full.
+    void NotePhasedSpot(PbotUpkeep::State& state, uint64 spawnId, uint32 ms)
+    {
+        if (!spawnId || !ms)
+            return;
+
+        PbotUpkeep::State::PhasedSpawn* empty = nullptr;
+        PbotUpkeep::State::PhasedSpawn* shortest = nullptr;
+
+        for (PbotUpkeep::State::PhasedSpawn& entry : state.phasedSpawns)
+        {
+            if (entry.spawnId == spawnId)
+            {
+                entry.msLeft = ms;   // already known: restart its timer instead of adding a row
+                return;
+            }
+
+            if (!entry.spawnId)
+            {
+                if (!empty)
+                    empty = &entry;
+                continue;
+            }
+
+            if (!shortest || entry.msLeft < shortest->msLeft)
+                shortest = &entry;
+        }
+
+        // A free slot first; when the list is full, replace the entry closest to expiring. This is a
+        // short memory of recent walks, not a blacklist, so losing the oldest costs least.
+        PbotUpkeep::State::PhasedSpawn* slot = empty ? empty : shortest;
+        if (!slot)
+            return;
+
+        slot->spawnId = spawnId;
+        slot->msLeft = ms;
+    }
+
+    // Is this spawn currently hidden from THIS bot by phase? Consulted before the map lookup, which
+    // is what makes it useful: while the grid is not loaded GetCreatureBySpawnId answers nullptr and
+    // the phase check at the destination has nothing to look at.
+    bool IsPhasedForBot(PbotUpkeep::State const& state, uint64 spawnId)
+    {
+        if (!spawnId)
+            return false;
+
+        for (PbotUpkeep::State::PhasedSpawn const& entry : state.phasedSpawns)
+            if (entry.spawnId == spawnId)
+                return entry.msLeft > 0;
+
+        return false;
+    }
+
+    bool FindNearestTownSpot(Player* bot, PbotUpkeep::State const& state, Errand errand, uint32 focus,
+        Position& out, uint32& outEntry, uint64& outSpawnId)
     {
         std::vector<RepairSpot> const* spots = SpotsFor(bot->GetMapId(), errand, focus);
         if (!spots || spots->empty())
@@ -357,8 +522,25 @@ namespace
             if (!WouldTrade(bot, spot.faction))
                 continue;
 
-            if (spot.blockedUntil > now)
+            if (spot.blockedUntil > now || spot.unreachable)
                 continue;
+
+            // A spawn this bot already found in another phase. Asked before the map lookup below,
+            // because at this distance the grid is not loaded and that lookup answers "not on the
+            // map" for a creature that is very much there - the failing boot of the pre-check.
+            if (IsPhasedForBot(state, spot.spawnId))
+                continue;
+
+            // A spot whose NPC exists but in ANOTHER PHASE is not somewhere this bot can trade, and a
+            // journey there ends in "nobody is there" - measured 2026-10-22, thirty such trips in one
+            // window. The NPC is in the map (and the row is unphased), the bot simply cannot see it.
+            // One map lookup per candidate is cheap next to the walk it prevents.
+            if (spot.spawnId)
+            {
+                Creature* present = bot->GetMap()->GetCreatureBySpawnId(spot.spawnId);
+                if (present && present->IsAlive() && !bot->InSamePhase(present))
+                    continue;
+            }
 
             float const dist = bot->GetExactDistSq(spot.pos.GetPositionX(), spot.pos.GetPositionY(),
                 spot.pos.GetPositionZ());
@@ -366,6 +548,8 @@ namespace
             {
                 best = dist;
                 out = spot.pos;
+                outEntry = spot.entry;
+                outSpawnId = spot.spawnId;
             }
         }
 
@@ -398,24 +582,67 @@ namespace
 
         if (vendor->HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
         {
-            // Collect first: selling mutates the inventory, and mutating a container while
-            // iterating it is how this kind of loop goes wrong.
-            std::vector<Item*> junk;
-            bot->ForEachItem(ItemSearchLocation::Inventory, [&junk](Item* item)
+            auto sell = [bot, &sold](Item* item)
             {
-                if (item->GetQuality() == ITEM_QUALITY_POOR && !item->IsRefundable())
-                    junk.push_back(item);
-                return ItemSearchCallbackResult::Continue;
-            });
+                // The list was collected before any of this ran; acting on it moves items about.
+                // Never touch one that is no longer where it was found.
+                if (!PbotBelongings::StillThere(bot, item))
+                    return false;
 
-            for (Item* item : junk)
-            {
                 uint32 const count = item->GetCount();
                 if (bot->CanSellItemToVendor(item, count))
-                    continue;   // the engine refused — a returned SellResult is an error
+                    return false;   // the engine refused — a returned SellResult IS the error
 
-                if (!bot->SellItemToVendor(item, count))
+                if (bot->SellItemToVendor(item, count))
+                    return false;
+
+                ++sold;
+                return true;
+            };
+
+            // WHAT to sell is not this module's judgement to make — PbotBelongings ranks every
+            // item for this particular bot, and the vendor simply works from the bottom of that
+            // list. Colour used to be the rule here, and colour is what broke the quest pipeline:
+            // a bot that had been adventuring all day had no grey left, so this logged "sold 0
+            // junk" every single trip while its bags stayed full and every quest hand-in was
+            // refused for want of a slot.
+            //
+            // Two passes, and the difference between them is the whole policy. Trash always goes,
+            // whether the bot is short of room or not — that part is not up for debate, it is what
+            // a vendor trip IS. Anything above trash is sold only while the bot actually lacks
+            // room, and then only the least valuable of it, one at a time.
+            for (Item* item : PbotBelongings::Disposable(bot, PbotBelongings::Worth::Junk))
+            {
+                if (sell(item))
+                    continue;
+
+                // The vendor would not take it, and a vendor's refusal is final: CanSellItemToVendor
+                // rejects anything whose sell price is zero, which is every quest item in the game.
+                // So bin it — this pass has already judged it worthless to this bot, and leaving it
+                // there means it can never leave the bags by any route at all.
+                //
+                // Measured: 107 copies of a repeatable quest's reward filled all four of one bot's
+                // bags. It walked to a vendor over and over, sold six coppers' worth of something
+                // else each time, and came away no emptier — because the hundred things actually
+                // filling its bags could not be sold at any price.
+                if (PbotBelongings::StillThere(bot, item)
+                    && PbotBelongings::Judge(bot, item) == PbotBelongings::Worth::Junk)
+                {
+                    TC_LOG_INFO("scripts.bots", "pbot upkeep: {} binned {} — no vendor will take it",
+                        bot->GetName(), item->GetTemplate()->GetDefaultLocaleName());
+                    bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
                     ++sold;
+                }
+            }
+
+            if (PbotBelongings::NeedsRoom(bot))
+            {
+                for (Item* item : PbotBelongings::Disposable(bot, PbotBelongings::Worth::Spare))
+                {
+                    if (!PbotBelongings::NeedsRoom(bot))
+                        break;
+                    sell(item);
+                }
             }
         }
 
@@ -443,10 +670,117 @@ namespace
                         ++repaired;
         }
 
+        // Repairs first, THEN a bag. Wearing out is what kills a bot; a small bag only slows it
+        // down, and PbotBags::WouldTake guards the purse besides.
+        uint32 const bagBought = vendor->HasNpcFlag(UNIT_NPC_FLAG_VENDOR)
+            ? PbotBags::BuyFromVendor(bot, vendor) : 0;
+
+        // Tools last, and at the same vendor: without them the bot cannot make a whole class of its
+        // recipes, and the only moment it is near the seller is this one.
+        uint32 const toolsBought = vendor->HasNpcFlag(UNIT_NPC_FLAG_VENDOR)
+            ? BuyNeededTools(bot, vendor) : 0;
+
         TC_LOG_INFO("scripts.bots", "pbot upkeep: {} sold {} junk at '{}', repaired {} items for {} "
-            "(purse {}, gear now {:.0f}%)", bot->GetName(), sold, vendor->GetName(), repaired,
+            "(purse {}, gear now {:.0f}%){}{}", bot->GetName(), sold, vendor->GetName(), repaired,
             moneyBefore > bot->GetMoney() ? moneyBefore - bot->GetMoney() : 0, bot->GetMoney(),
-            WorstDurability(bot) * 100.0f);
+            WorstDurability(bot) * 100.0f,
+            bagBought ? Trinity::StringFormat(", bought a {}-slot bag", bagBought) : std::string(),
+            toolsBought ? Trinity::StringFormat(", bought {} tool(s)", toolsBought) : std::string());
+    }
+}
+
+    // Buy the profession tools this bot's recipes need and it does not own.
+    //
+    // The engine refuses such a recipe with SPELL_FAILED_TOTEM_CATEGORY (152) and no journey fixes
+    // it, so the purchase belongs to the vendor visit that is already happening: the bot is standing
+    // at a merchant to sell junk anyway. Only items this vendor actually sells are considered, and
+    // only when the purse covers the price.
+namespace
+{
+    uint32 BuyNeededTools(Player* bot, Creature* vendor)
+    {
+        std::vector<uint32> const wanted = PbotProfession::NeededToolCategories(bot);
+        if (wanted.empty())
+            return 0;
+
+        VendorItemData const* items = vendor->GetVendorItems();
+        if (!items || items->Empty())
+            return 0;
+
+        uint32 bought = 0;
+        uint32 matched = 0;
+
+        for (uint32 category : wanted)
+        {
+            for (uint32 slot = 0; slot < items->GetItemCount(); ++slot)
+            {
+                VendorItem const* entry = items->GetItem(slot);
+                if (!entry || !entry->item)
+                    continue;
+
+                ItemTemplate const* tmpl = sObjectMgr->GetItemTemplate(entry->item);
+                if (!tmpl || tmpl->GetTotemCategory() != category)
+                    continue;
+
+                ++matched;
+
+                if (tmpl->GetBuyPrice() > bot->GetMoney())
+                    continue;
+
+                // NOT read as a verdict: BuyItemFromVendorSlot ends in `return crItem->maxcount != 0`,
+                // so it answers TRUE only for LIMITED-stock goods and FALSE for an ordinary item even
+                // when the purchase succeeded. Measured 2026-10-21: every tool buy was logged as a
+                // failure while the bots were in fact buying them.
+                bot->BuyItemFromVendorSlot(vendor->GetGUID(), slot, entry->item, 1, NULL_BAG, NULL_SLOT);
+
+                if (bot->HasItemTotemCategory(category))
+                {
+                    TC_LOG_INFO("scripts.bots", "pbot upkeep: {} bought a tool '{}' for {} copper "
+                        "(totem category {})", bot->GetName(), tmpl->GetDefaultLocaleName(),
+                        tmpl->GetBuyPrice(), category);
+                    ++bought;
+                    break;   // one item per category is enough
+                }
+
+                // Genuinely refused. Record what the sale looked like - an extended-cost item is paid
+                // in currency, a limited-stock one may be sold out, and a filtered one may not be
+                // offered to this bot at all.
+                TC_LOG_INFO("scripts.bots", "pbot upkeep: {} could not buy tool item {} for category "
+                    "{} at '{}' (price {}, extended cost {}, maxcount {}, type {}, free slots {}, "
+                    "dist {:.1f}, vendor in combat {}, bot alive {})", bot->GetName(),
+                    entry->item, category, vendor->GetName(), tmpl->GetBuyPrice(),
+                    entry->ExtendedCost, entry->maxcount, uint32(entry->Type),
+                    bot->GetFreeInventorySlotCount(), bot->GetDistance(vendor),
+                    vendor->IsInCombat() ? "yes" : "no", bot->IsAlive() ? "yes" : "no");
+            }
+        }
+
+        // Say why nothing was bought, once per ten minutes per bot: without this the purchase is a
+        // silent no-op and the difference between "the vendor does not stock it" and "the engine
+        // refused the sale" is invisible.
+        if (!bought)
+        {
+            static std::unordered_map<ObjectGuid, uint32> lastToolLog;
+            uint32 const nowMs = GameTime::GetGameTimeMS();
+            uint32& last = lastToolLog[bot->GetGUID()];
+            if (!last || nowMs - last >= 600000)
+            {
+                last = nowMs;
+                std::string list;
+                for (uint32 category : wanted)
+                {
+                    if (!list.empty())
+                        list += ',';
+                    list += std::to_string(category);
+                }
+
+                TC_LOG_INFO("scripts.bots", "pbot upkeep: {} needs tool(s) [{}]; vendor '{}' sells {} "
+                    "items, {} match the category", bot->GetName(), list, vendor->GetName(),
+                    items->GetItemCount(), matched);
+            }
+        }
+
+        return bought;
     }
 }
 
@@ -465,7 +799,7 @@ namespace
         char const* what)
     {
         QueryResult result = WorldDatabase.Query(Trinity::StringFormat(
-            "SELECT c.map, c.position_x, c.position_y, c.position_z, ct.faction FROM creature c "
+            "SELECT c.map, c.position_x, c.position_y, c.position_z, ct.faction, c.id, c.guid FROM creature c "
             "JOIN creature_template ct ON ct.entry = c.id "
             "WHERE (COALESCE(c.npcflag, ct.npcflag) & {}) != 0 "
             "AND c.PhaseId = 0 AND c.PhaseGroup = 0", npcFlag).c_str());
@@ -495,6 +829,8 @@ namespace
             RepairSpot spot;
             spot.pos.Relocate(f[1].GetFloat(), f[2].GetFloat(), f[3].GetFloat());
             spot.faction = f[4].GetUInt32();
+            spot.entry = f[5].GetUInt32();
+            spot.spawnId = f[6].GetUInt64();
             into[mapId].push_back(spot);
         }
         while (result->NextRow());
@@ -568,6 +904,88 @@ void PbotUpkeep::PreloadRepairSpots()
     LoadTownSpots(4096, _repairSpots, "repairer");        // UNIT_NPC_FLAG_REPAIR
     LoadTownSpots(0x200000, _auctionSpots, "auctioneer"); // UNIT_NPC_FLAG_AUCTIONEER
     LoadWorkbenchSpots();
+    LoadToolSpots();
+}
+
+namespace
+{
+    // Which vendors sell a profession tool, and where they stand.
+    //
+    // Item data lives in DB2, not in SQL, so the only way to know an item's totem category is to ask
+    // the item template at runtime. Every distinct item a vendor anywhere sells is looked up once at
+    // boot; the handful whose category is set are then joined back to the spawn table. Measured
+    // 2026-10-21: without this, bots only ever walked to the NEAREST vendor, which is a general
+    // goods seller, so a recipe needing a smith's hammer stayed unmade forever.
+    void LoadToolSpots()
+    {
+        QueryResult items = WorldDatabase.Query("SELECT DISTINCT item FROM npc_vendor");
+        if (!items)
+        {
+            TC_LOG_ERROR("scripts.bots", "pbot: npc_vendor returned nothing - no bot will ever buy a tool");
+            return;
+        }
+
+        std::unordered_map<uint32, uint32> categoryOf;   // item -> totem category
+        std::string itemList;
+
+        do
+        {
+            uint32 const itemId = items->Fetch()[0].GetUInt32();
+            ItemTemplate const* tmpl = sObjectMgr->GetItemTemplate(itemId);
+            if (!tmpl)
+                continue;
+
+            uint32 const category = tmpl->GetTotemCategory();
+            if (!category)
+                continue;
+
+            categoryOf[itemId] = category;
+            if (!itemList.empty())
+                itemList += ',';
+            itemList += std::to_string(itemId);
+        }
+        while (items->NextRow());
+
+        if (itemList.empty())
+        {
+            TC_LOG_INFO("scripts.bots", "pbot: no vendor on this realm sells a profession tool");
+            return;
+        }
+
+        QueryResult rows = WorldDatabase.Query(Trinity::StringFormat(
+            "SELECT nv.item, c.map, c.position_x, c.position_y, c.position_z, c.id, c.guid "
+            "FROM npc_vendor nv JOIN creature c ON c.id = nv.entry "
+            "WHERE nv.item IN ({}) AND c.PhaseId = 0 AND c.PhaseGroup = 0", itemList).c_str());
+
+        if (!rows)
+            return;
+
+        uint32 loaded = 0;
+        do
+        {
+            Field* f = rows->Fetch();
+            uint32 const itemId = f[0].GetUInt32();
+            auto const catItr = categoryOf.find(itemId);
+            if (catItr == categoryOf.end())
+                continue;
+
+            uint32 const mapId = f[1].GetUInt32();
+            MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+            if (!mapEntry || !mapEntry->IsContinent())
+                continue;
+
+            RepairSpot spot;
+            spot.pos.Relocate(f[2].GetFloat(), f[3].GetFloat(), f[4].GetFloat());
+            spot.entry = f[5].GetUInt32();
+            spot.spawnId = f[6].GetUInt64();
+            _toolSpots[catItr->second][mapId].push_back(spot);
+            ++loaded;
+        }
+        while (rows->NextRow());
+
+        TC_LOG_INFO("scripts.bots", "pbot: tool vendors loaded - {} categories, {} spawns",
+            uint32(_toolSpots.size()), loaded);
+    }
 }
 
 void PbotUpkeep::CountSpots(uint32& total, uint32& blocked)
@@ -580,7 +998,7 @@ void PbotUpkeep::CountSpots(uint32& total, uint32& blocked)
     {
         total += uint32(spots.size());
         for (RepairSpot const& spot : spots)
-            if (spot.blockedUntil > now)
+            if (spot.blockedUntil > now || spot.unreachable)
                 ++blocked;
     }
 }
@@ -611,6 +1029,16 @@ std::string PbotUpkeep::Describe(Player* bot)
         repairer ? Trinity::StringFormat("{:.0f}y", bot->GetDistance(repairer)) : "none");
 }
 
+bool PbotUpkeep::GearNeedsRepair(Player const* bot)
+{
+    if (!bot)
+        return false;
+
+    // WorstDurability lives in the file-local helpers and takes a mutable Player (Player::GetItemByPos
+    // is not a const member); nothing in it writes to the bot.
+    return WorstDurability(const_cast<Player*>(bot)) < REPAIR_BELOW;
+}
+
 bool PbotUpkeep::NeedsTown(Player* bot)
 {
     if (!bot || !bot->IsInWorld())
@@ -620,7 +1048,7 @@ bool PbotUpkeep::NeedsTown(Player* bot)
     // market at all. Without it the auction house is only ever used by whoever happens to already be
     // standing in a capital.
     return NeedsSpace(bot) || NeedsRepair(bot) || PbotAuction::HasSellableGoods(bot)
-        || PbotProfession::NeededFocus(bot) != 0;
+        || PbotProfession::NeededFocus(bot) != 0 || PbotBags::WantsABag(bot);
 }
 
 bool PbotUpkeep::Tick(Player* bot, State& state, Position& home, uint32& homeMapId, uint32 diff)
@@ -642,6 +1070,22 @@ bool PbotUpkeep::Tick(Player* bot, State& state, Position& home, uint32& homeMap
         cooldownMs -= diff;
     else
         cooldownMs = 0;
+
+    // Age the per-bot phase list on the same clock as everything else the bot waits on. Entries are
+    // per bot, so there is nowhere else they could expire; a zeroed entry is dropped, not kept.
+    for (PbotUpkeep::State::PhasedSpawn& entry : state.phasedSpawns)
+    {
+        if (!entry.spawnId)
+            continue;
+
+        if (entry.msLeft > diff)
+            entry.msLeft -= diff;
+        else
+        {
+            entry.msLeft = 0;
+            entry.spawnId = 0;
+        }
+    }
 
     if (!vendorGuid.IsEmpty())
     {
@@ -687,7 +1131,21 @@ bool PbotUpkeep::Tick(Player* bot, State& state, Position& home, uint32& homeMap
     if (!NeedsTown(bot))
         return false;
 
-    Creature* vendor = FindForNeed(bot);
+    // The NPC the bot actually walked to, when the town goal names one.
+    //
+    // FindVendor returns the LAST vendor the grid visitor passes, not the nearest - a latent fault
+    // that only became visible with tools: a bot stood four yards from a tool seller and traded with
+    // a warbringer sixty yards off instead, so the tool it came for was never on offer.
+    Creature* vendor = nullptr;
+    if (state.hasTownGoal && state.townGoalSpawnId)
+    {
+        Creature* target = bot->GetMap()->GetCreatureBySpawnId(state.townGoalSpawnId);
+        if (target && target->IsAlive() && bot->IsWithinDistInMap(target, PbotUpkeep::SEARCH_RANGE))
+            vendor = target;
+    }
+
+    if (!vendor)
+        vendor = FindForNeed(bot);
 
     // Nobody in reach, but the gear is what hurts: walk to the nearest town that can fix it. This is
     // the whole difference between a bot that repairs and one that does not — repairers are in
@@ -719,17 +1177,23 @@ bool PbotUpkeep::Tick(Player* bot, State& state, Position& home, uint32& homeMap
     // minutes, with copper ore sitting in four bots' bags the whole time.
     uint32 focus = PbotProfession::NeededFocus(bot);
 
+    std::vector<uint32> const toolCategories = PbotProfession::NeededToolCategories(bot);
+
     if (!vendor && (NeedsRepair(bot) || NeedsSpace(bot) || PbotAuction::HasSellableGoods(bot)
-        || focus))
+        || focus || !toolCategories.empty()))
     {
         // Stick with the destination already chosen. Picking the nearest spot afresh every attempt
         // is what stopped long walks finishing: each interruption left the bot somewhere new, so
         // "nearest" answered differently and the journey restarted instead of resuming.
         Position spot;
+        uint32 spotEntry = 0;
+        uint64 spotSpawn = 0;
         bool haveSpot = state.hasTownGoal && state.townGoalMap == bot->GetMapId();
         if (haveSpot)
         {
             spot = state.townGoal;
+            spotEntry = state.townGoalEntry;
+            spotSpawn = state.townGoalSpawnId;
             errand = state.townGoalErrand;
             focus = state.townGoalFocus;
         }
@@ -738,17 +1202,26 @@ bool PbotUpkeep::Tick(Player* bot, State& state, Position& home, uint32& homeMap
             // Ask every errand the bot actually has where it would send it, and take the shortest
             // walk. Repair overrides that choice — worn-out gear is the one errand whose value
             // decays while the bot walks somewhere else.
-            struct Candidate { Errand errand; uint32 focus; Position pos; float distance; };
+            struct Candidate { Errand errand; uint32 focus; Position pos; float distance; uint32 entry; uint64 spawnId; };
             std::vector<Candidate> candidates;
 
             auto consider = [&](Errand which, uint32 wantFocus)
             {
                 Position found;
-                if (!FindNearestTownSpot(bot, which, wantFocus, found))
+                uint32 foundEntry = 0;
+                uint64 foundSpawn = 0;
+                if (!FindNearestTownSpot(bot, state, which, wantFocus, found, foundEntry, foundSpawn))
                     return;
 
-                candidates.push_back({ which, wantFocus, found,
-                    bot->GetExactDist2d(found.GetPositionX(), found.GetPositionY()) });
+                float const walk = bot->GetExactDist2d(found.GetPositionX(), found.GetPositionY());
+
+                // A forge three kilometres away is not worth the trip: measured on the live realm, a
+                // bot set out for one 2989 yards off, spent its whole budget, and was recovered by
+                // the stuck watchdog. Crafting waits; the bot keeps playing.
+                if (which == Errand::Workbench && walk > MAX_WORKBENCH_TRIP)
+                    return;
+
+                candidates.push_back({ which, wantFocus, found, walk, foundEntry, foundSpawn });
             };
 
             if (NeedsRepair(bot) || NeedsSpace(bot))
@@ -757,6 +1230,11 @@ bool PbotUpkeep::Tick(Player* bot, State& state, Position& home, uint32& homeMap
                 consider(Errand::Auction, 0);
             if (focus)
                 consider(Errand::Workbench, focus);
+
+            // A tool the bot's recipes need and it does not own: go where one is actually sold, rather
+            // than hoping the nearest general-goods vendor happens to stock it.
+            for (uint32 category : toolCategories)
+                consider(Errand::Tool, category);
 
             Candidate const* pick = nullptr;
             for (Candidate const& candidate : candidates)
@@ -776,13 +1254,23 @@ bool PbotUpkeep::Tick(Player* bot, State& state, Position& home, uint32& homeMap
                 spot = pick->pos;
                 errand = pick->errand;
                 focus = pick->focus;
+                spotEntry = pick->entry;
+                spotSpawn = pick->spawnId;
                 haveSpot = true;
             }
         }
 
-        if (haveSpot && !state.hasTownGoal)
+        // A goal belongs to one map. When the bot has moved to another continent the stored goal is
+        // not just stale, it is unreachable: the travel target would be a position on a map the bot
+        // is no longer on. Measured once - a bot on map 571 carried a goal read on map 1, and the
+        // report named a spawn that could not exist there ("NOT IN MAP") while the bot was heading
+        // to a perfectly good spot. Re-create the goal whenever the map differs, not only when
+        // there is none.
+        if (haveSpot && (!state.hasTownGoal || state.townGoalMap != bot->GetMapId()))
         {
             state.townGoal = spot;
+            state.townGoalEntry = spotEntry;
+            state.townGoalSpawnId = spotSpawn;
             state.townGoalMap = bot->GetMapId();
             state.townGoalErrand = errand;
             state.townGoalFocus = focus;
@@ -842,20 +1330,118 @@ bool PbotUpkeep::Tick(Player* bot, State& state, Position& home, uint32& homeMap
             CountVisibleCreatures(bot, visible, friendlyVisible);
 
             Creature* anySeller = FindVendor(bot, /*requireRepair*/ false);
+
+            // The row names a live NPC that is close but not close enough, so walk the last yards
+            // instead of writing off a good spot.
+            //
+            // Travel stops at its own arrival radius (30 yards) while a trade needs about five, and
+            // the check above asks the wrong question for an auctioneer anyway: an auctioneer has
+            // UNIT_NPC_FLAG_AUCTIONEER, not VENDOR, so FindVendor cannot see it at any range.
+            // Measured on the live realm: auctioneers standing 25-27 yards away, "nobody is there"
+            // logged, and MarkSpotEmpty then blocked a perfectly good market for every bot. The
+            // repairers only escaped this because their search is wider than the stall distance.
+            Creature* nearby = state.townGoalSpawnId
+                ? bot->GetMap()->GetCreatureBySpawnId(state.townGoalSpawnId) : nullptr;
+
+            // Present in the map, yet hundreds of yards away in three dimensions while the bot stands
+            // on the recorded position: the row's own coordinates are the problem, so this is not a
+            // temporary miss and must not be retried later.
+            bool const outOfReach = nearby && bot->GetDistance(nearby) > 100.0f;
+
+            if (nearby && nearby->IsAlive() && bot->IsWithinDist(nearby, 60.0f)
+                && !bot->IsWithinDist(nearby, INTERACTION_DISTANCE))
+            {
+                walkMs += diff;
+                if (walkMs <= TOWN_TRIP_BUDGET_MS)
+                {
+                    PbotTravel::StepToward(bot, nearby->GetPosition());
+                    cooldownMs = LOOK_AGAIN_MS;
+                    return true;
+                }
+            }
+
+            // The last unmeasured link: is the NPC this row was read from present in the world, alive,
+            // and still flagged as a repairer at RUNTIME? The row comes from `creature`, the loader
+            // reports no refusal, the bot stands 8 yards away — so ask the engine by entry, from 300
+            // yards and counting the dead. Three outcomes, three different repairs:
+            //   NOT IN WORLD  -> the spawn is not in the live map (world data / load);
+            //   alive no      -> the NPC is dead (respawn timer, or something killed it);
+            //   repair no     -> it exists but its runtime npc flags do not include REPAIR.
+            // Positive control: the same entry, searched the way the caller means it. `alive=false`
+            // asks for a CORPSE (the check compares `IsAlive() == alive`), so it could never find a
+            // living trader - that misreading once produced "NOT IN WORLD" for 10 of 10 NPCs.
+            Creature* expected = state.townGoalEntry
+                ? bot->FindNearestCreature(state.townGoalEntry, 300.0f, /*alive*/ true) : nullptr;
+
+            // The decisive datum. The map indexes creatures by spawn GUID, not by entry, so this
+            // asks the same question by the identity the engine itself uses. If it finds the
+            // creature that the search by entry missed, the fault is in the entry lookup; if this
+            // is empty too, the spawn genuinely is not on the map and the fault is in loading.
+            Creature* bySpawn = state.townGoalSpawnId
+                ? bot->GetMap()->GetCreatureBySpawnId(state.townGoalSpawnId) : nullptr;
+
             TC_LOG_INFO("scripts.bots", "pbot upkeep: {} reached the recorded {} spot ({:.0f}y flat, "
-                "{:+.0f}y height) and after {} looks nobody is there; {} creatures in range "
-                "({} friendly); nearest seller {}",
+                "{:+.0f}y height, at {:.0f} {:.0f} {:.0f} map {}) and after {} looks nobody is there; "
+                "{} creatures in range ({} friendly); nearest seller {}; spawn {} by spawnId -> {}; "
+                "expected NPC {} by entry -> {}",
                 bot->GetName(), ErrandName(errand), toSpot,
                 spot.GetPositionZ() - bot->GetPositionZ(),
+                spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), bot->GetMapId(),
                 uint32(state.emptyLooks), visible, friendlyVisible,
                 anySeller ? Trinity::StringFormat("'{}' at {:.0f}y", anySeller->GetName(),
-                    bot->GetDistance(anySeller)) : "none either");
+                    bot->GetDistance(anySeller)) : "none either",
+                state.townGoalSpawnId,
+                bySpawn ? Trinity::StringFormat("in map at {:.0f}y (entry {}, alive {}, repair {}, npcflag {}, "
+                    "friendly {}, rep bot->npc {}, npc->bot {}, hostile {})",
+                    bot->GetDistance(bySpawn), bySpawn->GetEntry(),
+                    bySpawn->IsAlive() ? "yes" : "no",
+                    bySpawn->HasNpcFlag(UNIT_NPC_FLAG_REPAIR) ? "yes" : "no",
+                    bySpawn->GetNpcFlags(),
+                    bot->IsFriendlyTo(bySpawn) ? "yes" : "no",
+                    uint32(bot->GetReactionTo(bySpawn)),
+                    uint32(bySpawn->GetReactionTo(bot)),
+                    bot->IsHostileTo(bySpawn) ? "yes" : "no")
+                    : std::string("NOT IN MAP"),
+                state.townGoalEntry,
+                expected ? Trinity::StringFormat("found at {:.0f}y (alive {}, repair {})",
+                    bot->GetDistance(expected), expected->IsAlive() ? "yes" : "no",
+                    expected->HasNpcFlag(UNIT_NPC_FLAG_REPAIR) ? "yes" : "no")
+                    : std::string("NOT FOUND"));
 
             // Strike it from the shared table and carry on to the next nearest, rather than
             // hearthing home and losing the ground already covered. The walk budget is deliberately
             // NOT reset: the whole errand still has to finish inside it, so a bot cannot tour a
             // town's empty corners forever.
-            MarkSpotEmpty(bot, state.townGoal, errand, focus);
+            if (outOfReach)
+            {
+                MarkSpotUnreachable(bot, state.townGoal, errand, focus);
+            }
+            else
+            {
+                // A creature in the map but in ANOTHER PHASE is not a transient miss: the bot cannot
+                // step into that phase, and a one-hour retry means the same wasted walk every hour.
+                // Measured 2026-10-23: about twenty such trips an hour across the population.
+                bool const wrongPhase = nearby && nearby->IsAlive() && !bot->InSamePhase(nearby);
+
+                if (wrongPhase)
+                {
+                    // Remember it against THIS bot, and only this bot. Phase follows the character's
+                    // quest state, so the same NPC is visible to a bot that has finished the quest,
+                    // and a flag on the shared row would hide it from the whole population because
+                    // of one quest log.
+                    NotePhasedSpot(state, state.townGoalSpawnId, PHASE_BLOCK_MS);
+
+                    TC_LOG_INFO("scripts.bots", "pbot upkeep: {} is out of phase with spawn {} - this "
+                        "bot will not set out there for {} minutes", bot->GetName(),
+                        state.townGoalSpawnId, PHASE_BLOCK_MS / 60000);
+                }
+
+                // The row still goes out of the running for everyone, but on the ordinary timer: a
+                // position nobody has been able to trade at is worth skipping, while the phase
+                // itself is this bot's business. Four hours of shared silence was the measured
+                // harm (2026-10-23) - a distant bot's quest state took a working vendor off the map.
+                MarkSpotEmpty(bot, state.townGoal, errand, focus);
+            }
 
             state.emptyLooks = 0;
             state.hasTownGoal = false;
@@ -932,17 +1518,38 @@ bool PbotUpkeep::Tick(Player* bot, State& state, Position& home, uint32& homeMap
         // So it hearths home, which is what the stone is for and what a player would do. Walking
         // instead was the alternative and a worse one: the bots that need this most are the ones
         // whose gear is at zero, and they would not survive the trip across hostile country.
-        if (PbotHearth::GoHome(bot, home, homeMapId))
+        // Back off further each time this happens in a row.
+        //
+        // Hearthing home is the right first answer and a useless second one: if there was no vendor
+        // at home the last time, there is none now either. Measured over five hours, four bots
+        // produced 356 of the population's 375 failed vendor trips between them — one of them 99
+        // times — each hearthing home, finding nobody, and starting again two minutes later. That
+        // is a whole day spent not questing, not fighting, not doing anything at all.
+        //
+        // The counter resets the moment a trip succeeds, so a bot that simply wandered somewhere
+        // empty is not punished for it.
+        if (state.noVendorRuns < MAX_NO_VENDOR_BACKOFF)
+            ++state.noVendorRuns;
+
+        uint32 const backoff = AFTER_HEARTH_MS * state.noVendorRuns;
+
+        if (state.noVendorRuns <= 1 && PbotHearth::GoHome(bot, home, homeMapId))
         {
             TC_LOG_INFO("scripts.bots", "pbot upkeep: {} found no vendor and hearthed home to look "
                 "for one", bot->GetName());
             cooldownMs = AFTER_HEARTH_MS;
         }
         else
-            cooldownMs = STRANDED_RETRY_MS;   // already home, or nowhere to go — do not spin on it
+        {
+            // Already tried that. Get on with the rest of its life and ask again later.
+            cooldownMs = std::max(backoff, STRANDED_RETRY_MS);
+        }
 
         return false;
     }
+
+    // Someone to trade with: the drought is over, so forget it happened.
+    state.noVendorRuns = 0;
 
     vendorGuid = vendor->GetGUID();
     walkMs = 0;

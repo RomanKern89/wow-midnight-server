@@ -77,7 +77,14 @@ namespace PbotWorldSpots
     // continent would cost gigabytes for one bot, and loading maps is the one thing that has
     // repeatedly taken this server down. Returns false when nothing suitable is loaded — the bot
     // then simply stays where it is, which is a far better failure than an out-of-memory kill.
-    bool PickForLevel(uint8 level, Spot& out);
+    //
+    // avoidZoneId excludes one zone from the answer, for the caller that is trying to LEAVE it.
+    // Filtering on the caller's side was not enough: the fit window plus FIT_SLACK left the zone
+    // the bot was dying in among the winners, so the "escape" moved it to the same zone and the
+    // counter was cleared — measured live as "giving up on zone 3711 — moving to zone 3711",
+    // repeating in series of three deaths forever. 0 disables the filter; no table entry carries
+    // zone 0 (the loading queries require zoneId > 0), so it never collides with a real zone.
+    bool PickForLevel(uint8 level, Spot& out, uint32 avoidZoneId = 0);
 
     // Runs the one-time load now. Called from world startup on purpose: the two queries behind it
     // full-scan a 730k-row table (~1.8s together, since neither zoneId nor MOD(guid,N) is

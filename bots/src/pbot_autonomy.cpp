@@ -5,10 +5,15 @@
 
 #include "pbot_autonomy.h"
 
+#include <unordered_map>
+
+#include "pbot_questgoal.h"   // which creatures this bot's quests actually need
+
 #include "pbot_personality.h"   // Caution decides how early this bot gives up on a fight
 #include "pbot_world_spots.h"   // somewhere level-appropriate to escape a death loop to
 
 #include <cmath>
+#include <unordered_set>
 
 #include "Cell.h"
 #include "CellImpl.h"
@@ -90,6 +95,15 @@ namespace
             if (creature->IsElite() || creature->isWorldBoss())
                 return false;
 
+            // Shops and inns are not prey. Since the visibility fix bots can attack hostile NPCs at
+            // all, and a handful of them started clearing enemy-faction vendors and innkeepers -
+            // measured 2026-10-23: ten such kills in an hour, 0.9% of all kills. A player fights
+            // guards, not shopkeepers, and a town with its vendors dead stops being a town.
+            if (creature->HasNpcFlag(UNIT_NPC_FLAG_VENDOR | UNIT_NPC_FLAG_INNKEEPER))
+                return false;
+
+
+
             // Do not steal someone else's fight.
             if (creature->IsInCombat())
                 return false;
@@ -134,6 +148,8 @@ namespace
                 || creature->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE)) { ++_tally.NotAttackable; return false; }
             if (creature->IsCritter())                { ++_tally.Critter;          return false; }
             if (creature->IsElite() || creature->isWorldBoss()) { ++_tally.Elite;  return false; }
+            if (creature->HasNpcFlag(UNIT_NPC_FLAG_VENDOR | UNIT_NPC_FLAG_INNKEEPER))
+                { ++_tally.NotAttackable;  return false; }
             if (creature->IsInCombat())               { ++_tally.AlreadyInCombat;  return false; }
 
             uint8 const botLevel = _bot->GetLevel();
@@ -171,10 +187,36 @@ PbotAutonomy::RejectionTally PbotAutonomy::ExplainTargets(Player* bot, float ran
     return tally;
 }
 
+Unit* PbotAutonomy::FindQuestTarget(Player* bot, float range)
+{
+    if (!bot || !bot->IsInWorld())
+        return nullptr;
+
+    std::unordered_set<uint32> const wanted = PbotQuestGoal::WantedCreatures(bot);
+    if (wanted.empty())
+        return nullptr;
+
+    Creature* found = nullptr;
+    FairFightCreatureCheck fair(bot, range);
+    auto check = [&fair, &wanted](Creature* c)
+    {
+        return c && wanted.count(c->GetEntry()) && fair(c);
+    };
+
+    Trinity::CreatureLastSearcher<decltype(check)> searcher(bot, found, check);
+    Cell::VisitAllObjects(bot, searcher, range);
+
+    return found;
+}
+
 Unit* PbotAutonomy::FindTarget(Player* bot, float range)
 {
     if (!bot || !bot->IsInWorld())
         return nullptr;
+
+    // Quest targets first, anything else second — see FindQuestTarget for why they are separate.
+    if (Unit* questTarget = FindQuestTarget(bot, range))
+        return questTarget;
 
     Creature* found = nullptr;
     FairFightCreatureCheck check(bot, range);
@@ -243,8 +285,25 @@ bool PbotAutonomy::ShouldRetreat(Player* bot, Unit* victim)
         return false;
 
     // Finish what is nearly finished. A kill one hit away is worth more than a whole skin.
+    //
+    // Do NOT gate this on the bot's own health. Tried on 2026-10-17 (build 14230be): requiring the
+    // bot to be at least as healthy as this threshold made bots break off fights against targets
+    // that were nearly dead — 40% of all retreats ended up happening below 25% of the bot's health.
+    // Operator's rule, and it overrides the death-rate argument: a bot must KILL, not walk away from
+    // a 2% target. Reverted. If bots die finishing kills, the answer is that they must be able to
+    // win the fight (gear, strength), not that they should stop finishing.
     if (victim->GetHealthPct() < FINISH_TARGET_BELOW_PCT)
         return false;
+
+    // A group is a different fight from a duel.
+    //
+    // Measured 2026-10-22 across 179 moments where a bot first fell to half health: 66 had one
+    // attacker, but 87 had THREE OR MORE (65 with three, 22 with four). A single-mob threshold of
+    // ~30% is far too late once three things are swinging: the bot spends the last third of its
+    // health being hit by all of them and never gets the turn to run. Three or more is the point
+    // where a player disengages early, not heroically.
+    if (bot->GetHealthPct() <= 70.0f && bot->getAttackers().size() >= 3)
+        return true;
 
     // A cautious bot leaves at a third of its health, a reckless one only at the very end.
     float const threshold = PbotPersonality::Scale(
@@ -269,8 +328,33 @@ bool PbotAutonomy::Retreat(Player* bot, uint32& retreatMs, uint32 diff)
 
     if (!retreatMs)
     {
-        TC_LOG_INFO("scripts.bots", "pbot retreat: {} (level {}, hp {:.0f}%) breaks off and runs",
-            bot->GetName(), uint32(bot->GetLevel()), bot->GetHealthPct());
+        // The target's health is logged with the bot's own, because the only way to tell "the bot is
+        // losing" from "the bot never hurt the thing" is to see how much the target still has when
+        // the bot gives up. Zero kills in a window with 109 retreats says one of those two, and this
+        // number says which.
+        Unit* quitting = bot->GetVictim();
+        TC_LOG_INFO("scripts.bots", "pbot retreat: {} (level {}, hp {:.0f}%) breaks off and runs "
+            "— target at {:.0f}% hp (see {}, melee {}, ready {}, dist {:.0f}y, class {}, type {}, "
+            "attackstate {}, arc {}, mounted {}, phase {}, atimer {}, immune {}, entry {}, z bot {:+.0f} "
+            "vs target {:+.0f} (delta {:+.1f}))",
+            bot->GetName(), uint32(bot->GetLevel()), bot->GetHealthPct(),
+            quitting ? quitting->GetHealthPct() : -1.0f,
+            (quitting && bot->CanSeeOrDetect(quitting)) ? "yes" : "no",
+            (quitting && bot->IsWithinMeleeRange(quitting)) ? "yes" : "no",
+            bot->isAttackReady() ? "yes" : "no",
+            quitting ? bot->GetDistance(quitting) : -1.0f,
+            uint32(bot->GetClass()),
+            quitting ? (quitting->GetTypeId() == TYPEID_PLAYER ? "player" : "creature") : "none",
+            bot->HasUnitState(UNIT_STATE_MELEE_ATTACKING) ? "melee" : "not-melee",
+            (quitting && bot->HasInArc(float(M_PI), quitting)) ? "yes" : "no",
+            bot->IsMounted() ? "yes" : "no",
+            (quitting && bot->InSamePhase(quitting)) ? "yes" : "no",
+            bot->getAttackTimer(BASE_ATTACK),
+            (quitting && quitting->IsImmuneToPC()) ? "yes" : "no",
+            quitting ? quitting->GetEntry() : 0,
+            bot->GetPositionZ(),
+            quitting ? quitting->GetPositionZ() : 0.0f,
+            quitting ? bot->GetPositionZ() - quitting->GetPositionZ() : 0.0f);
 
         bot->AttackStop();
         bot->GetMotionMaster()->Clear();
@@ -339,6 +423,10 @@ bool PbotAutonomy::HandleDeath(Player* bot, uint32 diff, uint32& deathTimerMs, P
     // for them reported "0 deaths", and that zero was the absence of a log line, not an absence of
     // dying. Without this there is no kill-to-death ratio, and no way to see whether repaired gear
     // actually changes how a fight ends.
+    //
+    // The zone alone did not answer what the relocation line needs to answer. "Giving up on zone X
+    // — moving to zone X" is invisible without knowing the map and where in the zone the bot stood;
+    // the coordinates make a death and the move that follows it directly comparable in the log.
     if (!deathTimerMs)
     {
         deathTimerMs = DEATH_RECOVERY_MS;
@@ -349,8 +437,15 @@ bool PbotAutonomy::HandleDeath(Player* bot, uint32 diff, uint32& deathTimerMs, P
             consecutiveDeaths = 1;
         sinceLastDeathMs = 0;
 
-        TC_LOG_INFO("scripts.bots", "pbot death: {} (level {}) died in zone {} (death {} in a row)",
-            bot->GetName(), uint32(bot->GetLevel()), bot->GetZoneId(), uint32(consecutiveDeaths));
+        // How many things were actually on it. A bot that dies to ONE mob needs better gear or a
+        // better fight; a bot that dies to four needs to stop pulling four. The two need different
+        // repairs and the death line alone could not tell them apart.
+        uint32 const attackers = uint32(bot->getAttackers().size());
+
+        TC_LOG_INFO("scripts.bots", "pbot death: {} (level {}) died in zone {} at ({:.0f}, {:.0f}, "
+            "{:.0f}) map {} (death {} in a row), {} attacker(s) on it at the end", bot->GetName(),
+            uint32(bot->GetLevel()), bot->GetZoneId(), bot->GetPositionX(), bot->GetPositionY(),
+            bot->GetPositionZ(), bot->GetMapId(), uint32(consecutiveDeaths), attackers);
     }
 
     if (deathTimerMs > diff)
@@ -370,14 +465,26 @@ bool PbotAutonomy::HandleDeath(Player* bot, uint32 diff, uint32& deathTimerMs, P
     // Dying here over and over means this is not a place this bot can live. Moving it back to the
     // anchor only works when the anchor is somewhere survivable; when it is not, the anchor IS the
     // trap. So the bot moves house entirely, to a zone matched to its level.
+    //
+    // The zone it is leaving goes into the picker, and the answer is checked again: the picker used
+    // to return the current zone through its fit window plus slack, so the "move" teleported the
+    // bot to the same zone, looked like a success, and reset the counter — the live log shows
+    // "died 3 times over and is giving up on zone 3711 — moving to zone 3711" and the series
+    // repeating as 3 + 3 + 3. A relocation that does not change the zone must be reported as a
+    // failure, not as the thing that finally worked.
+    uint32 const fromZone = bot->GetZoneId();
+
     if (consecutiveDeaths >= DEATHS_BEFORE_RELOCATING)
     {
         PbotWorldSpots::Spot refuge;
-        if (PbotWorldSpots::PickForLevel(bot->GetLevel(), refuge))
+        bool const relocated = PbotWorldSpots::PickForLevel(bot->GetLevel(), refuge, fromZone)
+            && refuge.ZoneId != fromZone;
+
+        if (relocated)
         {
             TC_LOG_INFO("scripts.bots", "pbot death: {} died {} times over and is giving up on zone "
-                "{} — moving to zone {} (suggested level {})", bot->GetName(),
-                uint32(consecutiveDeaths), bot->GetZoneId(), refuge.ZoneId,
+                "{} — moving to zone {} map {} (suggested level {})", bot->GetName(),
+                uint32(consecutiveDeaths), fromZone, refuge.ZoneId, refuge.MapId,
                 uint32(refuge.SuggestedLevel));
 
             home = refuge.Pos;
@@ -389,6 +496,14 @@ bool PbotAutonomy::HandleDeath(Player* bot, uint32 diff, uint32& deathTimerMs, P
             StopResting(bot);
             return true;
         }
+
+        // Silence here was a defect in its own right: the bot stayed and kept dying, and nothing
+        // in the log distinguished "no refuge exists" from "the relocation code never ran". The
+        // counter is deliberately NOT reset — the next death tries again, because a continent may
+        // have loaded in the meantime, and staying must never read as a success.
+        TC_LOG_INFO("scripts.bots", "pbot death: {} died {} times over and there is no refuge "
+            "outside zone {} on a loaded map — staying", bot->GetName(), uint32(consecutiveDeaths),
+            fromZone);
     }
 
     bot->NearTeleportTo(home);

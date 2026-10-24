@@ -44,6 +44,14 @@
   - `.pbot` — fake-player bots, both as companions and as an autonomous population.
   - `.pbot world time` reports where the population's day actually goes; the same
     diagnostics found every defect listed in that README.
+  - Since 2026-10-24 the population also runs an intent layer (six intents scored
+    every 30 s and committed), cross-map reward delivery, item objectives resolved
+    through the loot tables, destinations taken from spawn data when a quest has no
+    map marker, profession tools bought at the vendor, and level-appropriate gear
+    that replaces the worst slot as the bot levels. Cast damage reaches its target
+    now: a socket-less bot used to be invisible to the engine's own targeting, so
+    every spell target was discarded before damage and only melee worked. Details:
+    [`CHANGELOG.md`](../../CHANGELOG.md).
 
 ## Honest limitations (documented, not hidden)
 

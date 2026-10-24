@@ -31,6 +31,14 @@ namespace PbotLoot
     // would otherwise hold the bot in place until the body decayed, because this returns "busy"
     // every tick while it keeps failing to arrive.
     bool Tick(Player* bot, ObjectGuid& corpseGuid, uint32& cooldownMs, uint32& walkMs, uint32 diff);
+
+    // Record a corpse this bot just earned, so Tick can come back to it.
+    //
+    // One guid at a time was measurably the defect: in a dense fight a bot kills again before it has
+    // opened the previous body, the new corpse overwrote the old guid, and the old one rotted. With a
+    // single slot only 15-36% of kills were ever looted; the overwrite is most of the rest. The queue
+    // is bounded — a bot will not walk back for a body from ten kills ago.
+    void NoteCorpse(Player* bot, ObjectGuid corpseGuid);
 }
 
 #endif // TRINITYCORE_PBOT_LOOT_H
