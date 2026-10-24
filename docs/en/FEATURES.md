@@ -37,6 +37,15 @@
 - **Companion bots**:
   - `.bot` — creature-based companions (Phase 1/2).
   - `.pbot` — fake-player bots with persistence and combat rotations (Phase 3).
+  - 60 socket-less `Player` bots live in the world with their own decision ladder:
+    six intents scored every 30 s, combat rotations with retreat, questing by
+    kill objectives and by item objectives resolved through loot tables,
+    destinations from spawn data when a quest carries no map marker, cross-map
+    reward delivery, looting, mining and herbalism, professions with the tool a
+    recipe needs bought at the vendor, level-appropriate gear replaced as the bot
+    levels, town errands (junk, per-slot repair, auction, forge), mounts, zone
+    migration, and progress that survives restarts. Sources and limits:
+    [`bots/README.md`](../../bots/README.md).
 
 ## Honest limitations (documented, not hidden)
 

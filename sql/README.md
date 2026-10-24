@@ -12,6 +12,11 @@ broken state, applying each fix, confirming the defect count reaches zero,
 applying it a second time with the backup tables proven untouched, and finally
 running the documented revert to check the original numbers come back exactly.
 
+`12` and `13` are newer and were verified differently: both were applied to a
+live database and checked by consequence - row counts before and after for `12`,
+creature health actually observed in combat for `13` - rather than by a full
+rollback cycle. Both carry their own backup table and a revert block.
+
 | File | What it fixes | Reload |
 |------|---------------|--------|
 | `01_quest_earthen_intro_fix.sql` | Earthen allied-race intro dead-lock (phantom quest 79201 blocking the chain) | `reload quest_template` (live, no restart) |
@@ -25,6 +30,8 @@ running the documented revert to check the original numbers come back exactly.
 | `09_npc_broken_spawns.sql` | Spawns with no `creature_template`, at the map origin, outside the map grid, or fallen through the world. Sunken ones are lifted to the local ground where neighbours allow it, deleted only when they cannot be placed | worldserver restart |
 | `10_npc_orphan_references.sql` | `creature_addon` rows pointing at a missing waypoint path or a deleted spawn, and formations whose leader or member no longer exists. Run after 07 and 09 | worldserver restart |
 | `11_duplicate_spawns.sql` | The same NPC spawned two or more times in the same spot — 2,598 groups / 3,403 redundant spawns. Only removes copies identical in all thirteen fields that decide what a player sees; different phases, models, equipment and event/pool membership are left alone. Run after 07-10 | worldserver restart |
+| `12_zero_hp_templates.sql` | Creature difficulty rows that leave a spawned creature with 0 health (9 rows fixed from the same entry's healthy difficulty; 54 named for a manual decision) | worldserver restart |
+| `13_creature_health_half.sql` | **Optional balance tuning, not a fix.** Halves non-boss creature health (521,923 rows) - for a bot-populated realm where ordinary mobs took 130+ hits | worldserver restart |
 
 ### `sql/hotfixes/` — a different database
 
