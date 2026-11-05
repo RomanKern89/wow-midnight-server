@@ -152,7 +152,7 @@ SOAP_USER='1#1' SOAP_PASS='...' scripts/create-account.sh -e you@example.com -p 
 .
 ├── README.md / README.ru.md      Обзор проекта (EN / RU)
 ├── DISCLAIMER.md                 Юридическое — что можно и что нельзя публиковать
-├── LICENSE                       MIT (только оригинальные материалы)
+├── LICENSE                       MIT для docs/SQL/скриптов, GPL-2.0 для bots/ и core-patches/
 ├── docs/
 │   ├── en/  CLIENT · SETUP · CONNECT · FEATURES · FIXES · ANNOUNCEMENT
 │   └── ru/  CLIENT · SETUP · CONNECT · FEATURES · FIXES · ANNOUNCEMENT

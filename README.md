@@ -152,7 +152,7 @@ The account name is an **email**: a retail client logs in through Battle.net, so
 .
 ├── README.md / README.ru.md      Project overview (EN / RU)
 ├── DISCLAIMER.md                 Legal — what we can and cannot ship
-├── LICENSE                       MIT (original materials only)
+├── LICENSE                       MIT for docs/SQL/scripts, GPL-2.0 for bots/ and core-patches/
 ├── docs/
 │   ├── en/  CLIENT · SETUP · CONNECT · FEATURES · FIXES · ANNOUNCEMENT
 │   └── ru/  CLIENT · SETUP · CONNECT · FEATURES · FIXES · ANNOUNCEMENT

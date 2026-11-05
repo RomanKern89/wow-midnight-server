@@ -47,3 +47,29 @@ Entertainment, Inc. Это **некоммерческий, образовате�
 
 Запуск приватного сервера может нарушать условия использования Blizzard.
 Используйте на свой риск. Авторы не несут ответственности.
+
+---
+
+**EN — Licensing**
+
+- `docs/`, `sql/`, `scripts/`, `assets/`, the README files and this text: **MIT**.
+- `bots/` and `core-patches/`: **GPL-2.0** — they include TrinityCore headers and
+  are applied to the TrinityCore server, so they are derivative works and cannot
+  be relicensed under MIT.
+- The game client, its data files and any world database are covered by **no
+  license here** and are not part of this project. They must not be
+  redistributed — not in releases, torrents, mirrors or archives.
+
+Full terms: [LICENSE](LICENSE).
+
+**RU — Лицензирование**
+
+- `docs/`, `sql/`, `scripts/`, `assets/`, файлы README и этот текст: **MIT**.
+- `bots/` и `core-patches/`: **GPL-2.0** — они включают заголовки TrinityCore и
+  применяются к серверу TrinityCore, то есть являются производными
+  произведениями и не могут быть перелицензированы в MIT.
+- Игровой клиент, его файлы данных и любая база мира **не покрыты ни одной
+  лицензией этого проекта** и в него не входят. Их нельзя распространять — ни в
+  релизах, ни в торрентах, ни в зеркалах и архивах.
+
+Полные условия: [LICENSE](LICENSE).

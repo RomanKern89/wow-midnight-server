@@ -1,14 +1,28 @@
-MIT License
+Licensing
+=========
 
 Copyright (c) 2026 RomanKern89 and contributors
 
-The MIT License applies to the ORIGINAL materials in this repository only:
-the documentation, the community fix SQL, and the helper scripts.
+This repository is multi-licensed: the license depends on what you take.
 
-It does NOT grant any rights to World of Warcraft, TrinityCore, or any
-third-party software referenced here. TrinityCore is licensed under GPL-2.0
-(see https://github.com/TrinityCore/TrinityCore). Blizzard game content is
-© Blizzard Entertainment and is not covered by this license. See DISCLAIMER.md.
+    Path                                   License    Nature
+    -------------------------------------- ---------- -------------------------
+    docs/                                  MIT        original text
+    sql/                                   MIT        original SQL fixes
+    scripts/                               MIT        original scripts
+    assets/                                MIT        original images
+    README.md, README.ru.md, CHANGELOG.md  MIT        original text
+    DISCLAIMER.md, LICENSE                 MIT        original text
+    bots/                                  GPL-2.0    derivative of TrinityCore
+    core-patches/                          GPL-2.0    derivative of TrinityCore
+
+Nothing in this file grants any rights to World of Warcraft, to Blizzard
+Entertainment's game client, game data or databases, or to any third-party
+software. Those are covered by their own terms. See DISCLAIMER.md.
+
+
+1. MIT License - documentation, SQL fixes, scripts, assets
+----------------------------------------------------------
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -27,3 +41,52 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+2. GPL-2.0 - bots/ and core-patches/
+------------------------------------
+
+The code in `bots/` and `core-patches/` is written against, includes headers
+from, and is applied to the TrinityCore server, which is licensed under the
+GNU General Public License version 2. These directories are therefore
+derivative works of TrinityCore and are distributed under GPL-2.0 as well -
+not under MIT, despite living in the same repository.
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+The full text of GPL-2.0 is at https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+and in the TrinityCore repository: https://github.com/TrinityCore/TrinityCore/blob/master/COPYING
+
+If you redistribute a binary built from these directories, GPL-2.0 requires you
+to make the corresponding source available. Shipping the source tree alongside
+the binary satisfies this.
+
+
+3. Third-party components and trademarks
+----------------------------------------
+
+    TrinityCore                    GPL-2.0   https://github.com/TrinityCore/TrinityCore
+    World of Warcraft              proprietary, (c) Blizzard Entertainment, Inc.
+    World of Warcraft client data  proprietary, not redistributable
+
+"World of Warcraft" and "Blizzard Entertainment" are trademarks or registered
+trademarks of Blizzard Entertainment, Inc. This project is non-commercial and
+educational, and is not affiliated with or endorsed by Blizzard Entertainment.
+
+
+4. What is not licensed here
+----------------------------
+
+No permission is granted to redistribute the game client, its data files
+(Data/, *.MPQ, *.db2, dbc/, maps/, vmaps/, mmaps/, cameras/) or a world
+database derived from them. Those files are not part of this repository and
+must not be added to it, to its releases, or to any torrent, mirror or archive
+published on its behalf. See DISCLAIMER.md.
